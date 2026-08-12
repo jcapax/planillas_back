@@ -266,29 +266,30 @@ INSERT INTO concepto (codigo, nombre, tipo, aplica_porcentaje, porcentaje, orden
 ON CONFLICT (codigo) DO NOTHING;
 
 -- ----------------------------------------------------------------------------
--- Personas y empleados de ejemplo
+-- Personas y empleados de ejemplo (DESACTIVADO: los datos reales se cargan
+-- desde los archivos Excel - ver cargar_datos.py y cargar_datos_complementarios.py)
 -- ----------------------------------------------------------------------------
-INSERT INTO persona (id, tipo_documento, nro_documento, apellido_paterno, apellido_materno, apellido_casada, nombres, sexo, fecha_nacimiento, pais_nacionalidad, direccion, telefono) VALUES
-    (1, 'CI', '4105285',  'Gutiérrez', 'Rojas',  NULL,     'José Luis',     'M', '1985-06-12', 'Bolivia', 'Av. Ostria Gutiérrez # 250', '64-445211'),
-    (2, 'CI', '5123456',  'Fernández', 'Quispe', 'García', 'María Elena',   'F', '1990-02-25', 'Bolivia', 'Calle La Plata # 118',       '64-423540'),
-    (3, 'CI', '3890123',  'Mamani',    'Choque', NULL,     'Carlos Alberto','M', '1982-11-03', 'Bolivia', 'Zona Central, Calle Arenales # 74', '64-412983'),
-    (4, 'CI', '4509876',  'Vargas',    'Soliz',  NULL,     'Ana María',     'F', '1995-08-19', 'Bolivia', 'Barrio Petrolero, Pasaje 2', '64-438771'),
-    (5, 'CI', '4781234',  'Cáceres',   'Mendieta', NULL,   'Pedro Raúl',    'M', '1978-01-30', 'Bolivia', 'Av. Las Américas # 612',     '64-451200'),
-    (6, 'CI', '5312468',  'Condori',   'Huanca', 'Pérez', 'Rosario',       'F', '1998-12-07', 'Bolivia', 'Calle Colón # 330',          '64-465517')
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO persona (id, tipo_documento, nro_documento, apellido_paterno, apellido_materno, apellido_casada, nombres, sexo, fecha_nacimiento, pais_nacionalidad, direccion, telefono) VALUES
+--     (1, 'CI', '4105285',  'Gutiérrez', 'Rojas',  NULL,     'José Luis',     'M', '1985-06-12', 'Bolivia', 'Av. Ostria Gutiérrez # 250', '64-445211'),
+--     (2, 'CI', '5123456',  'Fernández', 'Quispe', 'García', 'María Elena',   'F', '1990-02-25', 'Bolivia', 'Calle La Plata # 118',       '64-423540'),
+--     (3, 'CI', '3890123',  'Mamani',    'Choque', NULL,     'Carlos Alberto','M', '1982-11-03', 'Bolivia', 'Zona Central, Calle Arenales # 74', '64-412983'),
+--     (4, 'CI', '4509876',  'Vargas',    'Soliz',  NULL,     'Ana María',     'F', '1995-08-19', 'Bolivia', 'Barrio Petrolero, Pasaje 2', '64-438771'),
+--     (5, 'CI', '4781234',  'Cáceres',   'Mendieta', NULL,   'Pedro Raúl',    'M', '1978-01-30', 'Bolivia', 'Av. Las Américas # 612',     '64-451200'),
+--     (6, 'CI', '5312468',  'Condori',   'Huanca', 'Pérez', 'Rosario',       'F', '1998-12-07', 'Bolivia', 'Calle Colón # 330',          '64-465517')
+-- ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO empleado (id, persona_id, afp, nua_cua, fecha_ingreso, fecha_seguro, origen, cargo, clasificacion_laboral, jubilado, jornal_hora) VALUES
-    (1, 1, 'Gestora',           '1584701234', '2018-03-15', '2018-03-20', 'CH', 'Operador de Planta',          'Operario',       FALSE, 12.5000),
-    (2, 2, 'Futuro de Bolivia', '1594236781', '2019-07-01', '2019-07-05', 'LP', 'Control de Calidad',          'Técnico',        FALSE, 18.7500),
-    (3, 3, 'Previsión',         '1509876543', '2016-11-20', '2016-11-25', 'CB', 'Mantenimiento',               'Técnico',        FALSE, 15.0000),
-    (4, 4, 'Gestora',           '1540987612', '2021-02-10', '2021-02-12', 'CH', 'Asistente Administrativa',   'Administrativo', FALSE, 20.0000),
-    (5, 5, 'Futuro de Bolivia', '1512345698', '2014-05-05', '2014-05-08', 'PT', 'Supervisor de Producción',   'Supervisor',     FALSE, 25.0000),
-    (6, 6, 'Gestora',           '1576543210', '2022-09-12', '2022-09-14', 'CH', 'Operadora de Envasado',      'Operaria',       FALSE, 11.0000)
-ON CONFLICT (id) DO NOTHING;
+-- INSERT INTO empleado (id, persona_id, afp, nua_cua, fecha_ingreso, fecha_seguro, origen, cargo, clasificacion_laboral, jubilado, jornal_hora) VALUES
+--     (1, 1, 'Gestora',           '1584701234', '2018-03-15', '2018-03-20', 'CH', 'Operador de Planta',          'Operario',       FALSE, 12.5000),
+--     (2, 2, 'Futuro de Bolivia', '1594236781', '2019-07-01', '2019-07-05', 'LP', 'Control de Calidad',          'Técnico',        FALSE, 18.7500),
+--     (3, 3, 'Previsión',         '1509876543', '2016-11-20', '2016-11-25', 'CB', 'Mantenimiento',               'Técnico',        FALSE, 15.0000),
+--     (4, 4, 'Gestora',           '1540987612', '2021-02-10', '2021-02-12', 'CH', 'Asistente Administrativa',   'Administrativo', FALSE, 20.0000),
+--     (5, 5, 'Futuro de Bolivia', '1512345698', '2014-05-05', '2014-05-08', 'PT', 'Supervisor de Producción',   'Supervisor',     FALSE, 25.0000),
+--     (6, 6, 'Gestora',           '1576543210', '2022-09-12', '2022-09-14', 'CH', 'Operadora de Envasado',      'Operaria',       FALSE, 11.0000)
+-- ON CONFLICT (id) DO NOTHING;
 
 -- Ajustar secuencias para que las inserciones posteriores no colisionen con los ids de ejemplo
-SELECT setval('persona_id_seq',  (SELECT COALESCE(MAX(id), 0) FROM persona) + 1,  false);
-SELECT setval('empleado_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado) + 1, false);
+-- SELECT setval('persona_id_seq',  (SELECT COALESCE(MAX(id), 0) FROM persona) + 1,  false);
+-- SELECT setval('empleado_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado) + 1, false);
 
 -- ============================================================================
 -- MODIFICACIONES DE LA BASE DE DATOS
@@ -320,50 +321,51 @@ UPDATE concepto SET tipo_descuento = 'FIJO',     monto = 5.00  WHERE codigo = 'P
 UPDATE concepto SET tipo_descuento = 'VARIABLE' WHERE codigo IN
     ('RC_IVA', 'CELULAR', 'COMIDA', 'COOP', 'ASIS_COOP', 'CERVEZA', 'QUESO', 'APOYO', 'DCTO_VIRGEN', 'VARIOS');
 
--- Descuentos variables de ejemplo por empleado
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 1, e.id, c.id, 15.00 FROM empleado e, concepto c
-WHERE e.id = 1 AND c.codigo = 'CELULAR'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- Descuentos variables de ejemplo por empleado (DESACTIVADO: ver comentario
+-- sobre personas y empleados de ejemplo)
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 1, e.id, c.id, 15.00 FROM empleado e, concepto c
+-- WHERE e.id = 1 AND c.codigo = 'CELULAR'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 2, e.id, c.id, 50.00 FROM empleado e, concepto c
-WHERE e.id = 1 AND c.codigo = 'COOP'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 2, e.id, c.id, 50.00 FROM empleado e, concepto c
+-- WHERE e.id = 1 AND c.codigo = 'COOP'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 3, e.id, c.id, 20.00 FROM empleado e, concepto c
-WHERE e.id = 2 AND c.codigo = 'CELULAR'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 3, e.id, c.id, 20.00 FROM empleado e, concepto c
+-- WHERE e.id = 2 AND c.codigo = 'CELULAR'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 4, e.id, c.id, 10.00 FROM empleado e, concepto c
-WHERE e.id = 2 AND c.codigo = 'QUESO'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 4, e.id, c.id, 10.00 FROM empleado e, concepto c
+-- WHERE e.id = 2 AND c.codigo = 'QUESO'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 5, e.id, c.id, 35.00 FROM empleado e, concepto c
-WHERE e.id = 3 AND c.codigo = 'COOP'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 5, e.id, c.id, 35.00 FROM empleado e, concepto c
+-- WHERE e.id = 3 AND c.codigo = 'COOP'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 6, e.id, c.id, 12.00 FROM empleado e, concepto c
-WHERE e.id = 4 AND c.codigo = 'CELULAR'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 6, e.id, c.id, 12.00 FROM empleado e, concepto c
+-- WHERE e.id = 4 AND c.codigo = 'CELULAR'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 7, e.id, c.id, 18.00 FROM empleado e, concepto c
-WHERE e.id = 4 AND c.codigo = 'COMIDA'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 7, e.id, c.id, 18.00 FROM empleado e, concepto c
+-- WHERE e.id = 4 AND c.codigo = 'COMIDA'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 8, e.id, c.id, 45.00 FROM empleado e, concepto c
-WHERE e.id = 5 AND c.codigo = 'COOP'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 8, e.id, c.id, 45.00 FROM empleado e, concepto c
+-- WHERE e.id = 5 AND c.codigo = 'COOP'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
-SELECT 9, e.id, c.id, 8.00 FROM empleado e, concepto c
-WHERE e.id = 6 AND c.codigo = 'CERVEZA'
-ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+-- INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+-- SELECT 9, e.id, c.id, 8.00 FROM empleado e, concepto c
+-- WHERE e.id = 6 AND c.codigo = 'CERVEZA'
+-- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
-SELECT setval('empleado_descuento_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado_descuento) + 1, false);
+-- SELECT setval('empleado_descuento_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado_descuento) + 1, false);

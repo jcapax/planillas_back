@@ -12,6 +12,8 @@ import java.util.List;
 
 public interface PlanillaDetalleConceptoRepository extends JpaRepository<PlanillaDetalleConcepto, Long> {
     List<PlanillaDetalleConcepto> findByPlanillaDetalleIdOrderByIdAsc(Long planillaDetalleId);
+
+    List<PlanillaDetalleConcepto> findByPlanillaDetalleIdInOrderByIdAsc(Collection<Long> planillaDetalleIds);
     void deleteByPlanillaDetalleId(Long planillaDetalleId);
     void deleteByPlanillaDetalle_PlanillaId(Long planillaId);
 

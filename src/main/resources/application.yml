@@ -7,9 +7,9 @@ spring:
   application:
     name: sucre-surena
   datasource:
-    url: jdbc:postgresql://localhost:5432/planillas_db
+    url: jdbc:postgresql://192.168.1.3:5432/planillas_db
     username: postgres
-    password: postgres
+    password: postgres.
     driver-class-name: org.postgresql.Driver
   sql:
     init:

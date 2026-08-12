@@ -1,7 +1,10 @@
 package com.sucre.surena.controller;
 
 import com.sucre.surena.dto.EmpleadoDescuentoDTO;
+import com.sucre.surena.dto.PapeletaDTO;
 import com.sucre.surena.entity.Concepto;
+import com.sucre.surena.entity.Empleado;
+import com.sucre.surena.entity.Persona;
 import com.sucre.surena.entity.Planilla;
 import com.sucre.surena.entity.PlanillaDetalle;
 import com.sucre.surena.entity.PlanillaDetalleConcepto;
@@ -14,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -68,6 +72,49 @@ public class PlanillaController {
         return detalleRepository.findByPlanillaIdOrderByItemAsc(id);
     }
 
+    @Transactional(readOnly = true)
+    @GetMapping("/{id}/papeletas")
+    public ResponseEntity<?> papeletas(@PathVariable Long id) {
+        Planilla planilla = planillaRepository.findById(id).orElse(null);
+        if (planilla == null) {
+            return ResponseEntity.notFound().build();
+        }
+        List<PlanillaDetalle> detalles = detalleRepository.findByPlanillaIdOrderByItemAsc(id);
+        List<Long> detalleIds = detalles.stream().map(PlanillaDetalle::getId).toList();
+
+        Map<Long, List<PlanillaDetalleConcepto>> conceptosPorDetalle = detalleIds.isEmpty()
+                ? Map.of()
+                : detalleConceptoRepository.findByPlanillaDetalleIdInOrderByIdAsc(detalleIds).stream()
+                        .collect(Collectors.groupingBy(pdc -> pdc.getPlanillaDetalle().getId()));
+
+        List<PapeletaDTO> papeletas = detalles.stream().map(d -> {
+            Empleado empleado = d.getEmpleado();
+            Persona persona = empleado != null ? empleado.getPersona() : null;
+            List<PapeletaDTO.Linea> lineas = conceptosPorDetalle.getOrDefault(d.getId(), List.of())
+                    .stream()
+                    .map(pdc -> new PapeletaDTO.Linea(
+                            pdc.getConcepto().getCodigo(),
+                            pdc.getConcepto().getNombre(),
+                            pdc.getTipo(),
+                            pdc.getMonto()))
+                    .toList();
+            return new PapeletaDTO(
+                    d.getId(),
+                    d.getItem(),
+                    persona != null ? nombreCompleto(persona) : null,
+                    persona != null ? persona.getTipoDocumento() + " " + persona.getNroDocumento() : null,
+                    d.getTotalGanado(),
+                    d.getTotalDescuentos(),
+                    d.getLiquidoPagable(),
+                    lineas);
+        }).toList();
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("planilla", planilla);
+        body.put("papeletas", papeletas);
+        return ResponseEntity.ok(body);
+    }
+
     @GetMapping("/detalles/{detalleId}/conceptos")
     public List<PlanillaDetalleConcepto> conceptos(@PathVariable Long detalleId) {
         return detalleConceptoRepository.findByPlanillaDetalleIdOrderByIdAsc(detalleId);
@@ -115,5 +162,14 @@ public class PlanillaController {
         Map<String, String> body = new HashMap<>();
         body.put("error", mensaje);
         return body;
+    }
+
+    private String nombreCompleto(Persona persona) {
+        StringBuilder sb = new StringBuilder();
+        if (persona.getNombres() != null && !persona.getNombres().isBlank()) sb.append(persona.getNombres().trim()).append(' ');
+        if (persona.getApellidoPaterno() != null && !persona.getApellidoPaterno().isBlank()) sb.append(persona.getApellidoPaterno().trim()).append(' ');
+        if (persona.getApellidoMaterno() != null && !persona.getApellidoMaterno().isBlank()) sb.append(persona.getApellidoMaterno().trim()).append(' ');
+        if (persona.getApellidoCasada() != null && !persona.getApellidoCasada().isBlank()) sb.append(persona.getApellidoCasada().trim()).append(' ');
+        return sb.toString().trim();
     }
 }
