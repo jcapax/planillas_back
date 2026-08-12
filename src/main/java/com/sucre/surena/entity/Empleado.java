@@ -3,13 +3,12 @@ package com.sucre.surena.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "empleado",
-        uniqueConstraints = @UniqueConstraint(name = "uq_empleado_documento",
-                columnNames = {"tipo_documento", "nro_documento"}))
+@Table(name = "empleado")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -21,35 +20,12 @@ public class Empleado {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tipo_documento", nullable = false, length = 30)
-    private String tipoDocumento = "CI";
+    @OneToOne(fetch = FetchType.EAGER, optional = false, cascade = CascadeType.ALL)
+    @JoinColumn(name = "persona_id", nullable = false, unique = true)
+    private Persona persona;
 
-    @Column(name = "nro_documento", nullable = false, length = 50)
-    private String nroDocumento;
-
-    @Column(name = "apellido_paterno", length = 100)
-    private String apellidoPaterno;
-
-    @Column(name = "apellido_materno", length = 100)
-    private String apellidoMaterno;
-
-    @Column(name = "apellido_casada", length = 100)
-    private String apellidoCasada;
-
-    @Column(length = 100)
-    private String nombre1;
-
-    @Column(name = "otros_nombres", length = 100)
-    private String otrosNombres;
-
-    @Column(length = 1)
-    private String sexo;
-
-    @Column(name = "fecha_nacimiento")
-    private LocalDate fechaNacimiento;
-
-    @Column(name = "pais_nacionalidad", nullable = false, length = 60)
-    private String paisNacionalidad = "Bolivia";
+    @Transient
+    private Long personaId;
 
     @Column(length = 60)
     private String afp;
@@ -75,14 +51,8 @@ public class Empleado {
     @Column(nullable = false)
     private Boolean jubilado = false;
 
-    @Column(length = 255)
-    private String direccion;
-
-    @Column(length = 50)
-    private String telefono;
-
     @Column(name = "jornal_hora", nullable = false, precision = 12, scale = 4)
-    private java.math.BigDecimal jornalHora = java.math.BigDecimal.ZERO;
+    private BigDecimal jornalHora = BigDecimal.ZERO;
 
     @Column(nullable = false)
     private Boolean activo = true;
@@ -95,12 +65,12 @@ public class Empleado {
 
     @Transient
     public String getNombresCompletos() {
+        if (persona == null) return "";
         StringBuilder sb = new StringBuilder();
-        if (nombre1 != null && !nombre1.isBlank()) sb.append(nombre1.trim()).append(' ');
-        if (otrosNombres != null && !otrosNombres.isBlank()) sb.append(otrosNombres.trim()).append(' ');
-        if (apellidoPaterno != null && !apellidoPaterno.isBlank()) sb.append(apellidoPaterno.trim()).append(' ');
-        if (apellidoMaterno != null && !apellidoMaterno.isBlank()) sb.append(apellidoMaterno.trim()).append(' ');
-        if (apellidoCasada != null && !apellidoCasada.isBlank()) sb.append(apellidoCasada.trim()).append(' ');
+        if (persona.getNombres() != null && !persona.getNombres().isBlank()) sb.append(persona.getNombres().trim()).append(' ');
+        if (persona.getApellidoPaterno() != null && !persona.getApellidoPaterno().isBlank()) sb.append(persona.getApellidoPaterno().trim()).append(' ');
+        if (persona.getApellidoMaterno() != null && !persona.getApellidoMaterno().isBlank()) sb.append(persona.getApellidoMaterno().trim()).append(' ');
+        if (persona.getApellidoCasada() != null && !persona.getApellidoCasada().isBlank()) sb.append(persona.getApellidoCasada().trim()).append(' ');
         return sb.toString().trim();
     }
 }

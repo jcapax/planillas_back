@@ -1,20 +1,26 @@
 package com.sucre.surena.controller;
 
+import com.sucre.surena.dto.EmpleadoDescuentoDTO;
+import com.sucre.surena.entity.Concepto;
 import com.sucre.surena.entity.Planilla;
 import com.sucre.surena.entity.PlanillaDetalle;
 import com.sucre.surena.entity.PlanillaDetalleConcepto;
+import com.sucre.surena.repository.ConceptoRepository;
 import com.sucre.surena.repository.PlanillaDetalleConceptoRepository;
 import com.sucre.surena.repository.PlanillaDetalleRepository;
 import com.sucre.surena.repository.PlanillaRepository;
 import com.sucre.surena.service.PlanillaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/planillas")
@@ -24,6 +30,7 @@ public class PlanillaController {
     private final PlanillaRepository planillaRepository;
     private final PlanillaDetalleRepository detalleRepository;
     private final PlanillaDetalleConceptoRepository detalleConceptoRepository;
+    private final ConceptoRepository conceptoRepository;
     private final PlanillaService planillaService;
 
     @GetMapping
@@ -64,6 +71,34 @@ public class PlanillaController {
     @GetMapping("/detalles/{detalleId}/conceptos")
     public List<PlanillaDetalleConcepto> conceptos(@PathVariable Long detalleId) {
         return detalleConceptoRepository.findByPlanillaDetalleIdOrderByIdAsc(detalleId);
+    }
+
+    @GetMapping("/detalles/{detalleId}/descuentos")
+    public ResponseEntity<?> descuentos(@PathVariable Long detalleId) {
+        if (!detalleRepository.existsById(detalleId)) {
+            return ResponseEntity.notFound().build();
+        }
+        List<Concepto> variables = conceptoRepository
+                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "VARIABLE");
+        Map<Long, BigDecimal> montos = detalleConceptoRepository
+                .findByPlanillaDetalleIdOrderByIdAsc(detalleId).stream()
+                .filter(pdc -> pdc.getTipo() != null && Concepto.TIPO_DESCUENTO.equals(pdc.getTipo()))
+                .collect(Collectors.toMap(pdc -> pdc.getConcepto().getId(), PlanillaDetalleConcepto::getMonto));
+        List<EmpleadoDescuentoDTO> result = variables.stream()
+                .map(c -> new EmpleadoDescuentoDTO(c.getId(), c.getCodigo(), c.getNombre(),
+                        montos.getOrDefault(c.getId(), BigDecimal.ZERO)))
+                .toList();
+        return ResponseEntity.ok(result);
+    }
+
+    @PutMapping("/detalles/{detalleId}/descuentos")
+    public ResponseEntity<?> guardarDescuentos(@PathVariable Long detalleId,
+                                               @Valid @RequestBody List<EmpleadoDescuentoDTO> descuentos) {
+        try {
+            return ResponseEntity.ok(planillaService.actualizarDescuentos(detalleId, descuentos));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
+        }
     }
 
     @DeleteMapping("/{id}")

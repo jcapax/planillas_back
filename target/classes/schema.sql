@@ -35,21 +35,35 @@ CREATE TABLE IF NOT EXISTS usuario (
 );
 
 -- ----------------------------------------------------------------------------
--- EMPLEADO: información constante de cada dependiente
--- (origen: columnas B a AW de la hoja auxiliar + campos de "Formato propuesto")
+-- PERSONA: datos básicos de cada dependiente (identificación y datos personales)
+-- (origen: columnas B a AW de la hoja auxiliar)
+-- Los campos nombre1 y otros_nombres se unificaron en un único campo "nombres".
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS empleado (
+CREATE TABLE IF NOT EXISTS persona (
     id                    BIGSERIAL PRIMARY KEY,
     tipo_documento        VARCHAR(30)  NOT NULL DEFAULT 'CI',
     nro_documento         VARCHAR(50)  NOT NULL,
     apellido_paterno      VARCHAR(100),
     apellido_materno      VARCHAR(100),
     apellido_casada       VARCHAR(100),
-    nombre1               VARCHAR(100),
-    otros_nombres         VARCHAR(100),
+    nombres               VARCHAR(200),
     sexo                  VARCHAR(1),
     fecha_nacimiento      DATE,
     pais_nacionalidad     VARCHAR(60)  NOT NULL DEFAULT 'Bolivia',
+    direccion             VARCHAR(255),
+    telefono              VARCHAR(50),
+    created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_persona_documento UNIQUE (tipo_documento, nro_documento)
+);
+
+-- ----------------------------------------------------------------------------
+-- EMPLEADO: datos propios del contexto laboral del dependiente
+-- La información básica de cada dependiente vive en la tabla "persona".
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS empleado (
+    id                    BIGSERIAL PRIMARY KEY,
+    persona_id            BIGINT NOT NULL REFERENCES persona(id),
     afp                   VARCHAR(60),
     nua_cua               VARCHAR(50),
     fecha_ingreso         DATE,
@@ -58,13 +72,11 @@ CREATE TABLE IF NOT EXISTS empleado (
     cargo                 VARCHAR(150),
     clasificacion_laboral VARCHAR(150),
     jubilado              BOOLEAN NOT NULL DEFAULT FALSE,
-    direccion             VARCHAR(255),
-    telefono              VARCHAR(50),
     jornal_hora           NUMERIC(12,4) NOT NULL DEFAULT 0,
     activo                BOOLEAN NOT NULL DEFAULT TRUE,
     created_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_empleado_documento UNIQUE (tipo_documento, nro_documento)
+    CONSTRAINT uq_empleado_persona UNIQUE (persona_id)
 );
 
 -- ----------------------------------------------------------------------------
@@ -184,6 +196,7 @@ CREATE TABLE IF NOT EXISTS planilla_detalle_concepto (
 -- ÍNDICES
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_empleado_activo        ON empleado (activo);
+CREATE INDEX IF NOT EXISTS idx_persona_apellidos      ON persona (apellido_paterno, apellido_materno);
 CREATE INDEX IF NOT EXISTS idx_detalle_planilla       ON planilla_detalle (planilla_id);
 CREATE INDEX IF NOT EXISTS idx_detalle_empleado       ON planilla_detalle (empleado_id);
 CREATE INDEX IF NOT EXISTS idx_concepto_tipo          ON concepto (tipo, activo);
@@ -251,3 +264,106 @@ INSERT INTO concepto (codigo, nombre, tipo, aplica_porcentaje, porcentaje, orden
     ('DCTO_VIRGEN',     'Descuento Virgen',             'DESCUENTO', FALSE, NULL, 160),
     ('VARIOS',          'Descuentos Varios',            'DESCUENTO', FALSE, NULL, 200)
 ON CONFLICT (codigo) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- Personas y empleados de ejemplo
+-- ----------------------------------------------------------------------------
+INSERT INTO persona (id, tipo_documento, nro_documento, apellido_paterno, apellido_materno, apellido_casada, nombres, sexo, fecha_nacimiento, pais_nacionalidad, direccion, telefono) VALUES
+    (1, 'CI', '4105285',  'Gutiérrez', 'Rojas',  NULL,     'José Luis',     'M', '1985-06-12', 'Bolivia', 'Av. Ostria Gutiérrez # 250', '64-445211'),
+    (2, 'CI', '5123456',  'Fernández', 'Quispe', 'García', 'María Elena',   'F', '1990-02-25', 'Bolivia', 'Calle La Plata # 118',       '64-423540'),
+    (3, 'CI', '3890123',  'Mamani',    'Choque', NULL,     'Carlos Alberto','M', '1982-11-03', 'Bolivia', 'Zona Central, Calle Arenales # 74', '64-412983'),
+    (4, 'CI', '4509876',  'Vargas',    'Soliz',  NULL,     'Ana María',     'F', '1995-08-19', 'Bolivia', 'Barrio Petrolero, Pasaje 2', '64-438771'),
+    (5, 'CI', '4781234',  'Cáceres',   'Mendieta', NULL,   'Pedro Raúl',    'M', '1978-01-30', 'Bolivia', 'Av. Las Américas # 612',     '64-451200'),
+    (6, 'CI', '5312468',  'Condori',   'Huanca', 'Pérez', 'Rosario',       'F', '1998-12-07', 'Bolivia', 'Calle Colón # 330',          '64-465517')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO empleado (id, persona_id, afp, nua_cua, fecha_ingreso, fecha_seguro, origen, cargo, clasificacion_laboral, jubilado, jornal_hora) VALUES
+    (1, 1, 'Gestora',           '1584701234', '2018-03-15', '2018-03-20', 'CH', 'Operador de Planta',          'Operario',       FALSE, 12.5000),
+    (2, 2, 'Futuro de Bolivia', '1594236781', '2019-07-01', '2019-07-05', 'LP', 'Control de Calidad',          'Técnico',        FALSE, 18.7500),
+    (3, 3, 'Previsión',         '1509876543', '2016-11-20', '2016-11-25', 'CB', 'Mantenimiento',               'Técnico',        FALSE, 15.0000),
+    (4, 4, 'Gestora',           '1540987612', '2021-02-10', '2021-02-12', 'CH', 'Asistente Administrativa',   'Administrativo', FALSE, 20.0000),
+    (5, 5, 'Futuro de Bolivia', '1512345698', '2014-05-05', '2014-05-08', 'PT', 'Supervisor de Producción',   'Supervisor',     FALSE, 25.0000),
+    (6, 6, 'Gestora',           '1576543210', '2022-09-12', '2022-09-14', 'CH', 'Operadora de Envasado',      'Operaria',       FALSE, 11.0000)
+ON CONFLICT (id) DO NOTHING;
+
+-- Ajustar secuencias para que las inserciones posteriores no colisionen con los ids de ejemplo
+SELECT setval('persona_id_seq',  (SELECT COALESCE(MAX(id), 0) FROM persona) + 1,  false);
+SELECT setval('empleado_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado) + 1, false);
+
+-- ============================================================================
+-- MODIFICACIONES DE LA BASE DE DATOS
+-- Se registran SIEMPRE al final del archivo, sin alterar la definición
+-- original de las tablas.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Modificación 1: descuentos fijos y variables
+--   - concepto.tipo_descuento: FIJO (monto igual para todos en "monto")
+--                              | VARIABLE (monto propio por empleado)
+--   - nueva tabla empleado_descuento: montos variables por empleado
+-- ----------------------------------------------------------------------------
+ALTER TABLE concepto ADD COLUMN IF NOT EXISTS tipo_descuento VARCHAR(20);
+ALTER TABLE concepto ADD COLUMN IF NOT EXISTS monto NUMERIC(14,2);
+
+CREATE TABLE IF NOT EXISTS empleado_descuento (
+    id           BIGSERIAL PRIMARY KEY,
+    empleado_id  BIGINT NOT NULL REFERENCES empleado(id),
+    concepto_id  BIGINT NOT NULL REFERENCES concepto(id),
+    monto        NUMERIC(14,2) NOT NULL DEFAULT 0,
+    CONSTRAINT uq_empleado_descuento UNIQUE (empleado_id, concepto_id)
+);
+
+-- Clasificación de descuentos: FIJO (monto igual para todos) o VARIABLE (por empleado)
+UPDATE concepto SET tipo_descuento = 'FIJO',     monto = 20.00 WHERE codigo = 'CUOTA_SINDICAL';
+UPDATE concepto SET tipo_descuento = 'FIJO',     monto = 5.00  WHERE codigo = 'CUOTA_CONF_FABR';
+UPDATE concepto SET tipo_descuento = 'FIJO',     monto = 5.00  WHERE codigo = 'PRO_DEPORTE';
+UPDATE concepto SET tipo_descuento = 'VARIABLE' WHERE codigo IN
+    ('RC_IVA', 'CELULAR', 'COMIDA', 'COOP', 'ASIS_COOP', 'CERVEZA', 'QUESO', 'APOYO', 'DCTO_VIRGEN', 'VARIOS');
+
+-- Descuentos variables de ejemplo por empleado
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 1, e.id, c.id, 15.00 FROM empleado e, concepto c
+WHERE e.id = 1 AND c.codigo = 'CELULAR'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 2, e.id, c.id, 50.00 FROM empleado e, concepto c
+WHERE e.id = 1 AND c.codigo = 'COOP'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 3, e.id, c.id, 20.00 FROM empleado e, concepto c
+WHERE e.id = 2 AND c.codigo = 'CELULAR'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 4, e.id, c.id, 10.00 FROM empleado e, concepto c
+WHERE e.id = 2 AND c.codigo = 'QUESO'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 5, e.id, c.id, 35.00 FROM empleado e, concepto c
+WHERE e.id = 3 AND c.codigo = 'COOP'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 6, e.id, c.id, 12.00 FROM empleado e, concepto c
+WHERE e.id = 4 AND c.codigo = 'CELULAR'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 7, e.id, c.id, 18.00 FROM empleado e, concepto c
+WHERE e.id = 4 AND c.codigo = 'COMIDA'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 8, e.id, c.id, 45.00 FROM empleado e, concepto c
+WHERE e.id = 5 AND c.codigo = 'COOP'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+INSERT INTO empleado_descuento (id, empleado_id, concepto_id, monto)
+SELECT 9, e.id, c.id, 8.00 FROM empleado e, concepto c
+WHERE e.id = 6 AND c.codigo = 'CERVEZA'
+ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
+
+SELECT setval('empleado_descuento_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado_descuento) + 1, false);

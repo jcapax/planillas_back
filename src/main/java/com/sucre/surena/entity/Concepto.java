@@ -37,6 +37,12 @@ public class Concepto {
     @Column(precision = 8, scale = 4)
     private BigDecimal porcentaje;
 
+    @Column(name = "tipo_descuento", length = 20)
+    private String tipoDescuento;
+
+    @Column(precision = 14, scale = 2)
+    private BigDecimal monto;
+
     @Column(nullable = false)
     private Integer orden = 0;
 

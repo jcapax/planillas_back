@@ -1,8 +1,10 @@
 package com.sucre.surena.service;
 
+import com.sucre.surena.dto.EmpleadoDescuentoDTO;
 import com.sucre.surena.entity.*;
 import com.sucre.surena.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,7 +13,8 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +24,7 @@ public class PlanillaService {
     private final PlanillaDetalleRepository detalleRepository;
     private final PlanillaDetalleConceptoRepository conceptoRepository;
     private final EmpleadoRepository empleadoRepository;
+    private final EmpleadoDescuentoRepository empleadoDescuentoRepository;
     private final ParametroRepository parametroRepository;
     private final BonoAntiguedadRepository bonoAntiguedadRepository;
     private final ConceptoRepository conceptRepository;
@@ -65,7 +69,8 @@ public class PlanillaService {
         LocalDate finPeriodo = LocalDate.of(planilla.getPeriodoAnio(), planilla.getPeriodoMes(),
                 YearMonth.of(planilla.getPeriodoAnio(), planilla.getPeriodoMes()).lengthOfMonth());
 
-        List<Empleado> empleados = empleadoRepository.findByActivoTrueOrderByApellidoPaternoAsc();
+        List<Empleado> empleados = empleadoRepository.findByActivoTrue(
+                Sort.by(Sort.Direction.ASC, "persona.apellidoPaterno"));
 
         conceptoRepository.deleteByPlanillaDetalle_PlanillaId(planillaId);
         detalleRepository.deleteByPlanillaId(planillaId);
@@ -101,6 +106,10 @@ public class PlanillaService {
             BigDecimal totalAportes = aporteAfp.add(aporteRiesgo).add(aporteSolidario).add(aporteNacional);
 
             BigDecimal descuentosVarios = BigDecimal.ZERO;
+            Map<Concepto, BigDecimal> descuentos = calcularDescuentos(empleado);
+            for (BigDecimal monto : descuentos.values()) {
+                descuentosVarios = descuentosVarios.add(monto);
+            }
             BigDecimal totalDescuentosDet = totalAportes.add(descuentosVarios);
             BigDecimal liquido = totalGanado.subtract(totalDescuentosDet);
 
@@ -129,6 +138,7 @@ public class PlanillaService {
 
             guardarConceptos(detalle, totalGanado, aporteAfp, aporteRiesgo, aporteSolidario,
                     aporteNacional, haberBasico, bonoAntigMonto, salarioDominical);
+            descuentos.forEach((concepto, monto) -> guardarConcepto(detalle, concepto, monto));
 
             totalHaberes = totalHaberes.add(totalGanado);
             totalDescuentos = totalDescuentos.add(totalDescuentosDet);
@@ -147,31 +157,128 @@ public class PlanillaService {
         planillaRepository.deleteById(planillaId);
     }
 
+    /**
+     * Edita los descuentos VARIABLES de un empleado dentro de una planilla concreta.
+     * Los descuentos fijos no se tocan: se aplican automáticamente a todos.
+     * Tras guardar, recalcula totales del detalle y de la planilla.
+     */
+    @Transactional
+    public PlanillaDetalle actualizarDescuentos(Long detalleId, List<EmpleadoDescuentoDTO> descuentos) {
+        PlanillaDetalle detalle = detalleRepository.findById(detalleId)
+                .orElseThrow(() -> new IllegalArgumentException("Detalle de planilla no encontrado"));
+
+        List<Concepto> variables = conceptRepository
+                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "VARIABLE");
+        Set<Long> variableIds = variables.stream().map(Concepto::getId).collect(Collectors.toSet());
+
+        conceptoRepository.deleteByPlanillaDetalleIdAndConceptoIdIn(detalleId, variableIds);
+
+        Map<Concepto, BigDecimal> aplicados = new LinkedHashMap<>();
+        for (EmpleadoDescuentoDTO dto : descuentos) {
+            if (dto.conceptoId() == null || dto.monto() == null
+                    || dto.monto().compareTo(BigDecimal.ZERO) <= 0 || !variableIds.contains(dto.conceptoId())) {
+                continue;
+            }
+            Concepto concepto = conceptRepository.findById(dto.conceptoId()).orElse(null);
+            if (concepto == null) continue;
+            aplicados.put(concepto, dto.monto());
+            conceptoRepository.save(PlanillaDetalleConcepto.builder()
+                    .planillaDetalle(detalle)
+                    .concepto(concepto)
+                    .tipo(Concepto.TIPO_DESCUENTO)
+                    .monto(dto.monto())
+                    .build());
+        }
+
+        BigDecimal descuentosVarios = BigDecimal.ZERO;
+        for (Concepto c : conceptRepository
+                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "FIJO")) {
+            if (c.getMonto() != null && c.getMonto().compareTo(BigDecimal.ZERO) > 0) {
+                descuentosVarios = descuentosVarios.add(c.getMonto());
+            }
+        }
+        for (BigDecimal monto : aplicados.values()) {
+            descuentosVarios = descuentosVarios.add(monto);
+        }
+
+        BigDecimal totalDescuentos = detalle.getTotalAportes().add(descuentosVarios);
+        detalle.setDescuentosVarios(descuentosVarios);
+        detalle.setTotalDescuentos(totalDescuentos);
+        detalle.setLiquidoPagable(detalle.getTotalGanado().subtract(totalDescuentos));
+        detalleRepository.save(detalle);
+
+        recalcularTotalesPlanilla(detalle.getPlanilla());
+        return detalle;
+    }
+
+    private void recalcularTotalesPlanilla(Planilla planilla) {
+        List<PlanillaDetalle> detalles = detalleRepository.findByPlanillaIdOrderByItemAsc(planilla.getId());
+        BigDecimal totalHaberes = detalles.stream()
+                .map(PlanillaDetalle::getTotalGanado)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDescuentos = detalles.stream()
+                .map(PlanillaDetalle::getTotalDescuentos)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        planilla.setTotalHaberes(totalHaberes);
+        planilla.setTotalDescuentos(totalDescuentos);
+        planilla.setTotalLiquido(totalHaberes.subtract(totalDescuentos));
+        planillaRepository.save(planilla);
+    }
+
     private void guardarConceptos(PlanillaDetalle detalle, BigDecimal totalGanado,
                                   BigDecimal aporteAfp, BigDecimal aporteRiesgo,
                                   BigDecimal aporteSolidario, BigDecimal aporteNacional,
                                   BigDecimal haberBasico, BigDecimal bonoAntigMonto,
                                   BigDecimal salarioDominical) {
-        guardarConcepto(detalle, "HABER_BASICO", Concepto.TIPO_HABER, haberBasico);
-        guardarConcepto(detalle, "BONO_ANTIGUEDAD", Concepto.TIPO_HABER, bonoAntigMonto);
-        guardarConcepto(detalle, "SALARIO_DOMINICAL", Concepto.TIPO_HABER, salarioDominical);
-        guardarConcepto(detalle, "AFP_10", Concepto.TIPO_APORTE, aporteAfp);
-        guardarConcepto(detalle, "AFP_2_21", Concepto.TIPO_APORTE, aporteRiesgo);
-        guardarConcepto(detalle, "APORTE_SOLIDARIO", Concepto.TIPO_APORTE, aporteSolidario);
-        guardarConcepto(detalle, "APORTE_NACIONAL", Concepto.TIPO_APORTE, aporteNacional);
+        guardarConceptoPorCodigo(detalle, "HABER_BASICO", haberBasico);
+        guardarConceptoPorCodigo(detalle, "BONO_ANTIGUEDAD", bonoAntigMonto);
+        guardarConceptoPorCodigo(detalle, "SALARIO_DOMINICAL", salarioDominical);
+        guardarConceptoPorCodigo(detalle, "AFP_10", aporteAfp);
+        guardarConceptoPorCodigo(detalle, "AFP_2_21", aporteRiesgo);
+        guardarConceptoPorCodigo(detalle, "APORTE_SOLIDARIO", aporteSolidario);
+        guardarConceptoPorCodigo(detalle, "APORTE_NACIONAL", aporteNacional);
     }
 
-    private void guardarConcepto(PlanillaDetalle detalle, String codigo, String tipo, BigDecimal monto) {
-        conceptRepository.findByCodigo(codigo).ifPresent(concepto -> {
-            if (monto.compareTo(BigDecimal.ZERO) != 0) {
-                conceptoRepository.save(PlanillaDetalleConcepto.builder()
-                        .planillaDetalle(detalle)
-                        .concepto(concepto)
-                        .tipo(tipo)
-                        .monto(monto)
-                        .build());
+    private void guardarConceptoPorCodigo(PlanillaDetalle detalle, String codigo, BigDecimal monto) {
+        conceptRepository.findByCodigo(codigo)
+                .ifPresent(concepto -> guardarConcepto(detalle, concepto, monto));
+    }
+
+    private void guardarConcepto(PlanillaDetalle detalle, Concepto concepto, BigDecimal monto) {
+        if (monto != null && monto.compareTo(BigDecimal.ZERO) != 0) {
+            conceptoRepository.save(PlanillaDetalleConcepto.builder()
+                    .planillaDetalle(detalle)
+                    .concepto(concepto)
+                    .tipo(concepto.getTipo())
+                    .monto(monto)
+                    .build());
+        }
+    }
+
+    /**
+     * Descuentos aplicables al empleado:
+     *  - FIJO: monto configurado en el concepto, igual para todos los empleados.
+     *  - VARIABLE: monto propio registrado en empleado_descuento.
+     */
+    private Map<Concepto, BigDecimal> calcularDescuentos(Empleado empleado) {
+        Map<Concepto, BigDecimal> descuentos = new LinkedHashMap<>();
+
+        for (Concepto c : conceptRepository
+                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "FIJO")) {
+            if (c.getMonto() != null && c.getMonto().compareTo(BigDecimal.ZERO) > 0) {
+                descuentos.put(c, c.getMonto());
             }
-        });
+        }
+
+        for (EmpleadoDescuento d : empleadoDescuentoRepository
+                .findByEmpleadoIdOrderByConceptoOrdenAsc(empleado.getId())) {
+            if (d.getMonto() != null && d.getMonto().compareTo(BigDecimal.ZERO) > 0 && d.getConcepto() != null) {
+                descuentos.put(d.getConcepto(), d.getMonto());
+            }
+        }
+        return descuentos;
     }
 
     private BigDecimal calcularBonoAntiguedad(int dias) {
