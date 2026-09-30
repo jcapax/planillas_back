@@ -24,7 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/empleados")
+@RequestMapping("/api/personal/empleados")
 @RequiredArgsConstructor
 public class EmpleadoController {
 

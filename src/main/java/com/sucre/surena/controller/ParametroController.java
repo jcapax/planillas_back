@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/parametros")
+@RequestMapping("/api/personal/parametros")
 @RequiredArgsConstructor
 public class ParametroController {
 

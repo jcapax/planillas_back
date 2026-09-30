@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/bonos-antiguedad")
+@RequestMapping("/api/personal/bonos-antiguedad")
 @RequiredArgsConstructor
 public class BonoAntiguedadController {
 
@@ -33,6 +33,10 @@ public class BonoAntiguedadController {
 
     @PostMapping
     public ResponseEntity<?> crear(@Valid @RequestBody BonoAntiguedad bono) {
+        if (bono.getDesdeDias() != null && bonoAntiguedadRepository.existsByDesdeDias(bono.getDesdeDias())) {
+            return ResponseEntity.badRequest().body(error(
+                    "Ya existe un rango con 'Desde (días)' = " + bono.getDesdeDias()));
+        }
         bono.setId(null);
         bono.setActivo(true);
         return ResponseEntity.status(HttpStatus.CREATED).body(bonoAntiguedadRepository.save(bono));
@@ -42,6 +46,11 @@ public class BonoAntiguedadController {
     public ResponseEntity<?> actualizar(@PathVariable Long id, @Valid @RequestBody BonoAntiguedad datos) {
         return bonoAntiguedadRepository.findById(id)
                 .map(existente -> {
+                    if (datos.getDesdeDias() != null && bonoAntiguedadRepository
+                            .existsByDesdeDiasAndIdNot(datos.getDesdeDias(), id)) {
+                        return ResponseEntity.badRequest().body(error(
+                                "Ya existe un rango con 'Desde (días)' = " + datos.getDesdeDias()));
+                    }
                     datos.setId(existente.getId());
                     return ResponseEntity.ok(bonoAntiguedadRepository.save(datos));
                 })

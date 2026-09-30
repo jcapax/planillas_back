@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/planillas")
+@RequestMapping("/api/personal/planillas")
 @RequiredArgsConstructor
 public class PlanillaController {
 

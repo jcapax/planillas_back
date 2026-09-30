@@ -33,6 +33,9 @@ public class Empleado {
     @Column(name = "nua_cua", length = 50)
     private String nuaCua;
 
+    @Column(name = "cuenta_bancaria", length = 50)
+    private String cuentaBancaria;
+
     @Column(name = "fecha_ingreso")
     private LocalDate fechaIngreso;
 
@@ -53,6 +56,9 @@ public class Empleado {
 
     @Column(name = "jornal_hora", nullable = false, precision = 12, scale = 4)
     private BigDecimal jornalHora = BigDecimal.ZERO;
+
+    @Column(name = "horas_trabajadas", nullable = false, precision = 8, scale = 2)
+    private BigDecimal horasTrabajadas = new BigDecimal("208.00");
 
     @Column(nullable = false)
     private Boolean activo = true;

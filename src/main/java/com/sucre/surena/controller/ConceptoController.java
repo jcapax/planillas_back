@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/conceptos")
+@RequestMapping("/api/personal/conceptos")
 @RequiredArgsConstructor
 public class ConceptoController {
 

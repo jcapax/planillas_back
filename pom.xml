@@ -12,9 +12,9 @@
     </parent>
 
     <groupId>com.sucre</groupId>
-    <artifactId>sucre-surena</artifactId>
+    <artifactId>personal-sids</artifactId>
     <version>1.0.0</version>
-    <name>sucre-surena</name>
+    <name>personal-sids</name>
     <description>Sistema de control de planillas salariales - Sucre Sureña</description>
 
     <properties>

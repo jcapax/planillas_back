@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS empleado (
     persona_id            BIGINT NOT NULL REFERENCES persona(id),
     afp                   VARCHAR(60),
     nua_cua               VARCHAR(50),
+    cuenta_bancaria       VARCHAR(50),
     fecha_ingreso         DATE,
     fecha_seguro          DATE,
     origen                VARCHAR(10),
@@ -115,7 +116,8 @@ CREATE TABLE IF NOT EXISTS bono_antiguedad (
     CONSTRAINT chk_bono_rango CHECK (
         (desde_anios IS NOT NULL AND desde_anios >= 0) OR
         (desde_dias  IS NOT NULL AND desde_dias  >= 0)
-    )
+    ),
+    CONSTRAINT uq_bono_antiguedad UNIQUE (desde_dias)
 );
 
 -- ----------------------------------------------------------------------------
@@ -226,7 +228,8 @@ INSERT INTO parametro (codigo, nombre, valor, unidad, descripcion) VALUES
     ('HORAS_DIA',           'Horas de trabajo por día',           8.000000, 'HORAS',      'Jornada laboral diaria'),
     ('DIAS_MES',            'Días de haber básico por mes',       30.000000, 'DIAS',       'Días que se pagan en un mes'),
     ('DOMINICALES',         'Número de dominicales por mes',      4.000000,  'DIAS',       'Cantidad de domingos trabajados en el mes'),
-    ('DIA_ADMIN_RCIVA',     'Día tope RC-IVA',                    0.000000,  'DIAS',       'Reservado para futuros cálculos de RC-IVA')
+    ('DIA_ADMIN_RCIVA',     'Día tope RC-IVA',                    0.000000,  'DIAS',       'Reservado para futuros cálculos de RC-IVA'),
+    ('TOPE_APORTE_NACIONAL','Tope Aporte Nacional (Bs)',          13000.000000, 'MONTO',   'Si el total ganado es >= a este tope, el aporte nacional es (total ganado - tope) * tasa')
 ON CONFLICT (codigo) DO NOTHING;
 
 -- Tabla de bono de antigüedad (según hoja "FactorAntiguedad")
@@ -369,3 +372,31 @@ UPDATE concepto SET tipo_descuento = 'VARIABLE' WHERE codigo IN
 -- ON CONFLICT (empleado_id, concepto_id) DO NOTHING;
 
 -- SELECT setval('empleado_descuento_id_seq', (SELECT COALESCE(MAX(id), 0) FROM empleado_descuento) + 1, false);
+
+-- ----------------------------------------------------------------------------
+-- Modificación 2: cuenta bancaria del empleado
+--   Se agrega la columna "cuenta_bancaria" con el Nro de cuenta (Banco Económico)
+--   de cada beneficiario para el pago de planillas por transferencia.
+-- ----------------------------------------------------------------------------
+ALTER TABLE empleado ADD COLUMN IF NOT EXISTS cuenta_bancaria VARCHAR(50);
+
+-- ----------------------------------------------------------------------------
+-- Modificación 3: optimizar bono_antiguedad
+--   El INSERT inicial no tenía constraint de unicidad, por lo que en cada
+--   arranque se acumulaban registros duplicados. Se eliminan los duplicados y
+--   se agrega un índice único para evitar nuevos (equivalente a UNIQUE).
+-- ----------------------------------------------------------------------------
+DELETE FROM bono_antiguedad a
+USING bono_antiguedad b
+WHERE a.desde_dias IS NOT DISTINCT FROM b.desde_dias
+  AND a.id > b.id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bono_antiguedad ON bono_antiguedad (desde_dias);
+
+-- ----------------------------------------------------------------------------
+-- Modificación 4: horas trabajadas por empleado
+--   Cada empleado tiene su propia carga de horas mensual (no todos trabajan
+--   las 208 horas por defecto). PlanillaService usa este valor por empleado
+--   y solo recurre a (DIAS_MES - DOMINICALES) * HORAS_DIA cuando es NULO/<=0.
+-- ----------------------------------------------------------------------------
+ALTER TABLE empleado ADD COLUMN IF NOT EXISTS horas_trabajadas NUMERIC(8,2) NOT NULL DEFAULT 208.00;

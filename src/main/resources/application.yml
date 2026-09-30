@@ -1,13 +1,13 @@
 server:
-  port: 8080
+  port: 8086
   servlet:
     context-path: /
 
 spring:
   application:
-    name: sucre-surena
+    name: personal-sids
   datasource:
-    url: jdbc:postgresql://192.168.1.3:5432/planillas_db
+    url: jdbc:postgresql://192.168.1.171:5432/planillas_db
     username: postgres
     password: postgres.
     driver-class-name: org.postgresql.Driver

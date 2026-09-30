@@ -65,6 +65,7 @@ public class PlanillaService {
         BigDecimal riesgoComunPct = porcentajeParametro("RIESGO_COMUN");
         BigDecimal solidarioPct = porcentajeParametro("APORTE_SOLIDARIO");
         BigDecimal nacionalPct = porcentajeParametro("APORTE_NACIONAL");
+        BigDecimal topeAporteNacional = valorParametro("TOPE_APORTE_NACIONAL", new BigDecimal("13000"));
 
         LocalDate finPeriodo = LocalDate.of(planilla.getPeriodoAnio(), planilla.getPeriodoMes(),
                 YearMonth.of(planilla.getPeriodoAnio(), planilla.getPeriodoMes()).lengthOfMonth());
@@ -83,7 +84,10 @@ public class PlanillaService {
         for (Empleado empleado : empleados) {
             BigDecimal jornalHora = empleado.getJornalHora() != null ? empleado.getJornalHora() : BigDecimal.ZERO;
 
-            BigDecimal horasTrabajadas = (diasMes.subtract(dominicales)).multiply(horasDia);
+            BigDecimal horasTrabajadas = empleado.getHorasTrabajadas();
+            if (horasTrabajadas == null || horasTrabajadas.compareTo(BigDecimal.ZERO) <= 0) {
+                horasTrabajadas = (diasMes.subtract(dominicales)).multiply(horasDia);
+            }
             BigDecimal haberBasico = jornalHora.multiply(horasTrabajadas).setScale(2, RoundingMode.HALF_UP);
             BigDecimal salarioDominical = jornalHora.multiply(horasDia).multiply(dominicales)
                     .setScale(2, RoundingMode.HALF_UP);
@@ -102,7 +106,7 @@ public class PlanillaService {
             BigDecimal aporteAfp = totalGanado.multiply(aporteAfpPct).setScale(2, RoundingMode.HALF_UP);
             BigDecimal aporteRiesgo = totalGanado.multiply(riesgoComunPct).setScale(2, RoundingMode.HALF_UP);
             BigDecimal aporteSolidario = totalGanado.multiply(solidarioPct).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal aporteNacional = totalGanado.multiply(nacionalPct).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal aporteNacional = calcularAporteNacional(totalGanado, nacionalPct, topeAporteNacional);
             BigDecimal totalAportes = aporteAfp.add(aporteRiesgo).add(aporteSolidario).add(aporteNacional);
 
             BigDecimal descuentosVarios = BigDecimal.ZERO;
@@ -287,6 +291,15 @@ public class PlanillaService {
                 .findFirstByActivoTrueAndDesdeDiasLessThanEqualOrderByDesdeDiasDesc(dias)
                 .map(BonoAntiguedad::getPorcentaje)
                 .orElse(BigDecimal.ZERO);
+    }
+
+    private BigDecimal calcularAporteNacional(BigDecimal totalGanado, BigDecimal pct, BigDecimal tope) {
+        if (totalGanado.compareTo(tope) < 0) {
+            return BigDecimal.ZERO;
+        }
+        return totalGanado.subtract(tope)
+                .multiply(pct)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal valorParametro(String codigo, BigDecimal defecto) {

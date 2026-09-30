@@ -13,4 +13,8 @@ public interface BonoAntiguedadRepository extends JpaRepository<BonoAntiguedad, 
     Optional<BonoAntiguedad> findByActivoTrueAndDesdeDiasLessThanEqualAndHastaDiasGreaterThanEqual(Integer dias, Integer dias2);
 
     Optional<BonoAntiguedad> findFirstByActivoTrueAndDesdeDiasLessThanEqualOrderByDesdeDiasDesc(Integer dias);
+
+    boolean existsByDesdeDias(Integer desdeDias);
+
+    boolean existsByDesdeDiasAndIdNot(Integer desdeDias, Long id);
 }
