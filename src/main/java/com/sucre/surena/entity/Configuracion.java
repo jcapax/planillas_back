@@ -23,4 +23,10 @@ public class Configuracion {
 
     @Column(name = "cantidad_minimo_nacional", nullable = false, precision = 14, scale = 2)
     private BigDecimal cantidadMinimoNacional = BigDecimal.ONE;
+
+    @Column(name = "edad_riesgo_comun")
+    private Integer edadRiesgoComun;
+
+    @Column(name = "edad_riesgo_comun_pct", precision = 8, scale = 4)
+    private BigDecimal edadRiesgoComunPct;
 }

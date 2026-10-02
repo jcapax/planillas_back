@@ -7,7 +7,7 @@ import lombok.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "planilla_detalle")
+@Table(name = "v_planilla_detalle")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -16,7 +16,6 @@ import java.math.BigDecimal;
 public class PlanillaDetalle {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @JsonIgnore

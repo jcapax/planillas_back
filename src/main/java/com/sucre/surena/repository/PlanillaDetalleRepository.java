@@ -7,5 +7,4 @@ import java.util.List;
 
 public interface PlanillaDetalleRepository extends JpaRepository<PlanillaDetalle, Long> {
     List<PlanillaDetalle> findByPlanillaIdOrderByItemAsc(Long planillaId);
-    void deleteByPlanillaId(Long planillaId);
 }

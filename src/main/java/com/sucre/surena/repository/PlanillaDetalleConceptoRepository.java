@@ -15,11 +15,11 @@ public interface PlanillaDetalleConceptoRepository extends JpaRepository<Planill
 
     List<PlanillaDetalleConcepto> findByPlanillaDetalleIdInOrderByIdAsc(Collection<Long> planillaDetalleIds);
     void deleteByPlanillaDetalleId(Long planillaDetalleId);
-    void deleteByPlanillaDetalle_PlanillaId(Long planillaId);
+    void deleteByPlanillaId(Long planillaId);
 
     @Modifying
     @Transactional
-    @Query("DELETE FROM PlanillaDetalleConcepto pdc WHERE pdc.planillaDetalle.id = :detalleId AND pdc.concepto.id IN :conceptoIds")
+    @Query("DELETE FROM PlanillaDetalleConcepto pdc WHERE pdc.planillaDetalleId = :detalleId AND pdc.concepto.id IN :conceptoIds")
     void deleteByPlanillaDetalleIdAndConceptoIdIn(@Param("detalleId") Long detalleId,
                                                   @Param("conceptoIds") Collection<Long> conceptoIds);
 }

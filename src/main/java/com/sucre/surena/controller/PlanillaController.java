@@ -122,7 +122,7 @@ public class PlanillaController {
         Map<Long, List<PlanillaDetalleConcepto>> conceptosPorDetalle = detalleIds.isEmpty()
                 ? Map.of()
                 : detalleConceptoRepository.findByPlanillaDetalleIdInOrderByIdAsc(detalleIds).stream()
-                        .collect(Collectors.groupingBy(pdc -> pdc.getPlanillaDetalle().getId()));
+                        .collect(Collectors.groupingBy(pdc -> pdc.getPlanillaDetalleId()));
 
         List<PapeletaDTO> papeletas = detalles.stream().map(d -> {
             Empleado empleado = d.getEmpleado();

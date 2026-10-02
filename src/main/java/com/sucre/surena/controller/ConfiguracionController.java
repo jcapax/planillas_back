@@ -34,6 +34,14 @@ public class ConfiguracionController {
         }
         configuracion.setMinimoNacional(datos.getMinimoNacional());
         configuracion.setCantidadMinimoNacional(datos.getCantidadMinimoNacional());
+        if (datos.getEdadRiesgoComun() != null && datos.getEdadRiesgoComun() < 0) {
+            return ResponseEntity.badRequest().body(error("La edad de riesgo común no puede ser negativa"));
+        }
+        if (datos.getEdadRiesgoComunPct() != null && datos.getEdadRiesgoComunPct().signum() < 0) {
+            return ResponseEntity.badRequest().body(error("El porcentaje no puede ser negativo"));
+        }
+        configuracion.setEdadRiesgoComun(datos.getEdadRiesgoComun());
+        configuracion.setEdadRiesgoComunPct(datos.getEdadRiesgoComunPct());
         return ResponseEntity.ok(configuracionRepository.save(configuracion));
     }
 

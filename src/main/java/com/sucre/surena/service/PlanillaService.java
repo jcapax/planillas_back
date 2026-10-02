@@ -10,9 +10,13 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.Period;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -33,6 +37,15 @@ public class PlanillaService {
     private final EmpresaRepository empresaRepository;
     private final ConfiguracionRepository configuracionRepository;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    private Long nuevoDetalleId() {
+        return ((Number) entityManager
+                .createNativeQuery("SELECT nextval('planilla_detalle_id_seq')")
+                .getSingleResult()).longValue();
+    }
+
     /**
      * Códigos calculados automáticamente por el sistema: no se editan en la matriz.
      * Los HABER base / aportes por porcentaje se generan; los FIJO se aplican solos.
@@ -50,18 +63,17 @@ public class PlanillaService {
                 });
 
         Empresa empresa = empresaRepository.findByActivoTrue().stream().findFirst().orElse(null);
-        Planilla planilla = Planilla.builder()
-                .periodoAnio(anio)
-                .periodoMes(mes)
-                .nombre(nombrePeriodo(mes, anio))
-                .empresa(empresa)
-                .estado(Planilla.ESTADO_BORRADOR)
-                .fechaLiquidacion(LocalDate.of(anio, mes, YearMonth.of(anio, mes).atEndOfMonth().getDayOfMonth()))
-                .totalHaberes(BigDecimal.ZERO)
-                .totalDescuentos(BigDecimal.ZERO)
-                .totalLiquido(BigDecimal.ZERO)
-                .build();
-        return planillaRepository.save(planilla);
+        Number nuevoId = (Number) entityManager.createNativeQuery(
+                "INSERT INTO planilla (periodo_anio, periodo_mes, nombre, empresa_id, estado, fecha_liquidacion) "
+                + "VALUES (:anio, :mes, :nombre, :empresaId, :estado, :fecha) RETURNING id")
+                .setParameter("anio", anio)
+                .setParameter("mes", mes)
+                .setParameter("nombre", nombrePeriodo(mes, anio))
+                .setParameter("empresaId", empresa != null ? empresa.getId() : null)
+                .setParameter("estado", Planilla.ESTADO_BORRADOR)
+                .setParameter("fecha", LocalDate.of(anio, mes, YearMonth.of(anio, mes).atEndOfMonth().getDayOfMonth()))
+                .getSingleResult();
+        return planillaRepository.findById(nuevoId.longValue()).orElseThrow();
     }
 
     @Transactional
@@ -73,7 +85,6 @@ public class PlanillaService {
         BigDecimal diasMes = valorParametro("DIAS_MES", new BigDecimal("30"));
         BigDecimal dominicales = valorParametro("DOMINICALES", new BigDecimal("4"));
         BigDecimal aporteAfpPct = porcentajeParametro("APORTE_AFP");
-        BigDecimal riesgoComunPct = porcentajeParametro("RIESGO_COMUN");
         BigDecimal solidarioPct = porcentajeParametro("APORTE_SOLIDARIO");
         BigDecimal nacionalPct = porcentajeParametro("APORTE_NACIONAL");
         BigDecimal topeAporteNacional = valorParametro("TOPE_APORTE_NACIONAL", new BigDecimal("13000"));
@@ -90,9 +101,7 @@ public class PlanillaService {
         List<Empleado> empleados = empleadoRepository.findByActivoTrue(
                 Sort.by(Sort.Direction.ASC, "persona.apellidoPaterno"));
 
-        conceptoRepository.deleteByPlanillaDetalle_PlanillaId(planillaId);
-        detalleRepository.deleteByPlanillaId(planillaId);
-        detalleRepository.flush();
+        conceptoRepository.deleteByPlanillaId(planillaId);
 
         BigDecimal totalHaberes = BigDecimal.ZERO;
         BigDecimal totalDescuentos = BigDecimal.ZERO;
@@ -142,7 +151,7 @@ public class PlanillaService {
             BigDecimal totalGanado = haberBasico.add(salarioDominical).add(bonoAntigMonto).add(haberesExtra);
 
             BigDecimal aporteAfp = totalGanado.multiply(aporteAfpPct).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal aporteRiesgo = totalGanado.multiply(riesgoComunPct).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal aporteRiesgo = totalGanado.multiply(riesgoComunPctPara(empleado, finPeriodo)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal aporteSolidario = totalGanado.multiply(solidarioPct).setScale(2, RoundingMode.HALF_UP);
             BigDecimal aporteNacional = calcularAporteNacional(totalGanado, nacionalPct, topeAporteNacional);
             BigDecimal totalAportes = aporteAfp.add(aporteRiesgo).add(aporteSolidario).add(aporteNacional)
@@ -152,49 +161,33 @@ public class PlanillaService {
             BigDecimal totalDescuentosDet = totalAportes.add(descuentosVarios);
             BigDecimal liquido = totalGanado.subtract(totalDescuentosDet);
 
-            PlanillaDetalle detalle = PlanillaDetalle.builder()
-                    .planilla(planilla)
-                    .empleado(empleado)
-                    .item(item++)
-                    .horasTrabajadas(horasTrabajadas)
-                    .jornalHora(jornalHora)
-                    .haberBasico(haberBasico)
-                    .diasAntiguedad((int) diasAntiguedad)
-                    .bonoAntigPct(bonoAntigPct)
-                    .salarioDominical(salarioDominical)
-                    .bonoAntigMonto(bonoAntigMonto)
-                    .totalGanado(totalGanado)
-                    .aporteSolidario(aporteSolidario)
-                    .aporteNacional(aporteNacional)
-                    .aporteAfp(aporteAfp)
-                    .aporteRiesgoComun(aporteRiesgo)
-                    .totalAportes(totalAportes)
-                    .descuentosVarios(descuentosVarios)
-                    .totalDescuentos(totalDescuentosDet)
-                    .liquidoPagable(liquido)
-                    .build();
-            detalleRepository.save(detalle);
-
-            guardarConceptos(detalle, totalGanado, aporteAfp, aporteRiesgo, aporteSolidario,
-                    aporteNacional, haberBasico, bonoAntigMonto, salarioDominical);
-            guardarFijos(detalle);
-            variablesEmpleado.forEach((concepto, monto) -> guardarConcepto(detalle, concepto, monto));
+            int currentItem = item++;
+            Long detalleId = nuevoDetalleId();
+            final BigDecimal horasF = horasTrabajadas;
+            final Integer diasF = (int) diasAntiguedad;
+            guardarConceptos(detalleId, planillaId, empleado.getId(), currentItem, horasTrabajadas,
+                    jornalHora, diasF, bonoAntigPct, totalGanado, aporteAfp,
+                    aporteRiesgo, aporteSolidario, aporteNacional, haberBasico, bonoAntigMonto,
+                    salarioDominical);
+            guardarFijos(detalleId, planillaId, empleado.getId(), currentItem, horasF,
+                    jornalHora, diasF, bonoAntigPct);
+            variablesEmpleado.forEach((concepto, monto) -> guardarConcepto(detalleId, planillaId,
+                    empleado.getId(), currentItem, horasF, jornalHora, diasF,
+                    bonoAntigPct, concepto, monto));
 
             totalHaberes = totalHaberes.add(totalGanado);
             totalDescuentos = totalDescuentos.add(totalDescuentosDet);
         }
 
-        planilla.setTotalHaberes(totalHaberes);
-        planilla.setTotalDescuentos(totalDescuentos);
-        planilla.setTotalLiquido(totalHaberes.subtract(totalDescuentos));
-        return planillaRepository.save(planilla);
+        return planillaRepository.findById(planillaId).orElseThrow();
     }
 
     @Transactional
     public void eliminar(Long planillaId) {
-        conceptoRepository.deleteByPlanillaDetalle_PlanillaId(planillaId);
-        detalleRepository.deleteByPlanillaId(planillaId);
-        planillaRepository.deleteById(planillaId);
+        conceptoRepository.deleteByPlanillaId(planillaId);
+        entityManager.createNativeQuery("DELETE FROM planilla WHERE id = :id")
+                .setParameter("id", planillaId)
+                .executeUpdate();
     }
 
     /**
@@ -219,7 +212,14 @@ public class PlanillaService {
             Concepto concepto = editables.get(dto.conceptoId());
             if (concepto == null) continue;
             conceptoRepository.save(PlanillaDetalleConcepto.builder()
-                    .planillaDetalle(detalle)
+                    .planillaDetalleId(detalleId)
+                    .planillaId(detalle.getPlanilla().getId())
+                    .empleadoId(detalle.getEmpleado().getId())
+                    .item(detalle.getItem())
+                    .horasTrabajadas(detalle.getHorasTrabajadas())
+                    .jornalHora(detalle.getJornalHora())
+                    .diasAntiguedad(detalle.getDiasAntiguedad())
+                    .bonoAntigPct(detalle.getBonoAntigPct())
                     .concepto(concepto)
                     .tipo(concepto.getTipo())
                     .monto(dto.monto())
@@ -227,13 +227,12 @@ public class PlanillaService {
         }
 
         recalcularDetalle(detalle);
-        recalcularTotalesPlanilla(detalle.getPlanilla());
         return detalle;
     }
 
     /**
      * Vuelve a recalcular los campos total_aportes, descuentos_varios,
-     * total_descuentos y liquido_pagable de cada fila de planilla_detalle
+     * total_descuentos y liquido_pagable de cada fila de v_planilla_detalle
      * (además del total_ganado y los totales de la planilla), a partir de los
      * conceptos ya guardados. Idempotente: no borra ajustes del mes.
      */
@@ -248,24 +247,7 @@ public class PlanillaService {
         for (PlanillaDetalle detalle : detalles) {
             recalcularDetalle(detalle);
         }
-        recalcularTotalesPlanilla(planilla);
         return planilla;
-    }
-
-    private void recalcularTotalesPlanilla(Planilla planilla) {
-        List<PlanillaDetalle> detalles = detalleRepository.findByPlanillaIdOrderByItemAsc(planilla.getId());
-        BigDecimal totalHaberes = detalles.stream()
-                .map(PlanillaDetalle::getTotalGanado)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalDescuentos = detalles.stream()
-                .map(PlanillaDetalle::getTotalDescuentos)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        planilla.setTotalHaberes(totalHaberes);
-        planilla.setTotalDescuentos(totalDescuentos);
-        planilla.setTotalLiquido(totalHaberes.subtract(totalDescuentos));
-        planillaRepository.save(planilla);
     }
 
     // ------------------------------------------------------------------
@@ -359,11 +341,14 @@ public class PlanillaService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private void guardarFijos(PlanillaDetalle detalle) {
+    private void guardarFijos(Long detalleId, Long planillaId, Long empleadoId, Integer item,
+                              BigDecimal horasTrabajadas, BigDecimal jornalHora,
+                              Integer diasAntiguedad, BigDecimal bonoAntigPct) {
         for (Concepto c : conceptRepository
                 .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "FIJO")) {
             if (c.getMonto() != null && c.getMonto().compareTo(BigDecimal.ZERO) > 0) {
-                guardarConcepto(detalle, c, c.getMonto());
+                guardarConcepto(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                        diasAntiguedad, bonoAntigPct, c, c.getMonto());
             }
         }
     }
@@ -387,7 +372,14 @@ public class PlanillaService {
             if (fijo.getMonto() != null && fijo.getMonto().compareTo(BigDecimal.ZERO) > 0
                     && !presentes.contains(fijo.getId())) {
                 PlanillaDetalleConcepto creado = conceptoRepository.save(PlanillaDetalleConcepto.builder()
-                        .planillaDetalle(detalle)
+                        .planillaDetalleId(detalle.getId())
+                        .planillaId(detalle.getPlanilla().getId())
+                        .empleadoId(detalle.getEmpleado().getId())
+                        .item(detalle.getItem())
+                        .horasTrabajadas(detalle.getHorasTrabajadas())
+                        .jornalHora(detalle.getJornalHora())
+                        .diasAntiguedad(detalle.getDiasAntiguedad())
+                        .bonoAntigPct(detalle.getBonoAntigPct())
                         .concepto(fijo)
                         .tipo(Concepto.TIPO_DESCUENTO)
                         .monto(fijo.getMonto())
@@ -397,18 +389,11 @@ public class PlanillaService {
         }
 
         BigDecimal haberesExtra = BigDecimal.ZERO;
-        BigDecimal descuentosVars = BigDecimal.ZERO;
-        BigDecimal aportesExtra = BigDecimal.ZERO;
         for (PlanillaDetalleConcepto pdc : filas) {
             if (pdc.getConcepto() == null || pdc.getMonto() == null) continue;
             if (CODIGOS_SISTEMA.contains(pdc.getConcepto().getCodigo())) continue;
             String tipo = pdc.getTipo() != null ? pdc.getTipo() : pdc.getConcepto().getTipo();
             if (Concepto.TIPO_HABER.equals(tipo)) haberesExtra = haberesExtra.add(pdc.getMonto());
-            else if (Concepto.TIPO_DESCUENTO.equals(tipo)
-                    && !"FIJO".equals(pdc.getConcepto().getTipoDescuento())) {
-                descuentosVars = descuentosVars.add(pdc.getMonto());
-            }
-            else if (Concepto.TIPO_APORTE.equals(tipo)) aportesExtra = aportesExtra.add(pdc.getMonto());
         }
 
         BigDecimal haberBasico = nz(detalle.getHaberBasico());
@@ -417,30 +402,65 @@ public class PlanillaService {
         BigDecimal totalGanado = haberBasico.add(dominical).add(bono).add(haberesExtra);
 
         BigDecimal aporteAfpPct = porcentajeParametro("APORTE_AFP");
-        BigDecimal riesgoComunPct = porcentajeParametro("RIESGO_COMUN");
         BigDecimal solidarioPct = porcentajeParametro("APORTE_SOLIDARIO");
         BigDecimal nacionalPct = porcentajeParametro("APORTE_NACIONAL");
         BigDecimal topeAporteNacional = valorParametro("TOPE_APORTE_NACIONAL", new BigDecimal("13000"));
-        BigDecimal aporteAfp = totalGanado.multiply(aporteAfpPct).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal aporteRiesgo = totalGanado.multiply(riesgoComunPct).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal aporteSolidario = totalGanado.multiply(solidarioPct).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal aporteNacional = calcularAporteNacional(totalGanado, nacionalPct, topeAporteNacional);
-        BigDecimal totalAportes = aporteAfp.add(aporteRiesgo).add(aporteSolidario)
-                .add(aporteNacional).add(aportesExtra);
+        actualizarConceptoSistema(filas, detalle, "AFP_10",
+                totalGanado.multiply(aporteAfpPct).setScale(2, RoundingMode.HALF_UP));
+        actualizarConceptoSistema(filas, detalle, "AFP_2_21",
+                totalGanado.multiply(riesgoComunPctPara(detalle.getEmpleado(), fechaCorteDetalle(detalle)))
+                        .setScale(2, RoundingMode.HALF_UP));
+        actualizarConceptoSistema(filas, detalle, "APORTE_SOLIDARIO",
+                totalGanado.multiply(solidarioPct).setScale(2, RoundingMode.HALF_UP));
+        actualizarConceptoSistema(filas, detalle, "APORTE_NACIONAL",
+                calcularAporteNacional(totalGanado, nacionalPct, topeAporteNacional));
+    }
 
-        BigDecimal descuentosVarios = sumarFijosGlobales().add(descuentosVars);
-        BigDecimal totalDescuentos = totalAportes.add(descuentosVarios);
+    private void actualizarConceptoSistema(List<PlanillaDetalleConcepto> filas, PlanillaDetalle detalle,
+                                           String codigo, BigDecimal monto) {
+        PlanillaDetalleConcepto fila = filas.stream()
+                .filter(p -> p.getConcepto() != null && codigo.equals(p.getConcepto().getCodigo()))
+                .findFirst()
+                .orElse(null);
+        if (fila != null) {
+            fila.setMonto(monto);
+            conceptoRepository.save(fila);
+            return;
+        }
+        conceptRepository.findByCodigo(codigo).ifPresent(concepto ->
+                conceptoRepository.save(PlanillaDetalleConcepto.builder()
+                        .planillaDetalleId(detalle.getId())
+                        .planillaId(detalle.getPlanilla().getId())
+                        .empleadoId(detalle.getEmpleado().getId())
+                        .item(detalle.getItem())
+                        .horasTrabajadas(detalle.getHorasTrabajadas())
+                        .jornalHora(detalle.getJornalHora())
+                        .diasAntiguedad(detalle.getDiasAntiguedad())
+                        .bonoAntigPct(detalle.getBonoAntigPct())
+                        .concepto(concepto)
+                        .tipo(concepto.getTipo())
+                        .monto(monto)
+                        .build()));
+    }
 
-        detalle.setTotalGanado(totalGanado);
-        detalle.setAporteAfp(aporteAfp);
-        detalle.setAporteRiesgoComun(aporteRiesgo);
-        detalle.setAporteSolidario(aporteSolidario);
-        detalle.setAporteNacional(aporteNacional);
-        detalle.setTotalAportes(totalAportes);
-        detalle.setDescuentosVarios(descuentosVarios);
-        detalle.setTotalDescuentos(totalDescuentos);
-        detalle.setLiquidoPagable(totalGanado.subtract(totalDescuentos));
-        detalleRepository.save(detalle);
+    private BigDecimal riesgoComunPctPara(Empleado empleado, LocalDate fechaCorte) {
+        Configuracion configuracion = configuracionRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (configuracion != null && configuracion.getEdadRiesgoComun() != null
+                && configuracion.getEdadRiesgoComunPct() != null
+                && empleado != null && empleado.getPersona() != null
+                && empleado.getPersona().getFechaNacimiento() != null) {
+            int edad = Period.between(empleado.getPersona().getFechaNacimiento(), fechaCorte).getYears();
+            if (edad >= configuracion.getEdadRiesgoComun()) {
+                return configuracion.getEdadRiesgoComunPct();
+            }
+        }
+        return porcentajeParametro("RIESGO_COMUN");
+    }
+
+    private LocalDate fechaCorteDetalle(PlanillaDetalle detalle) {
+        Planilla pl = detalle.getPlanilla();
+        return LocalDate.of(pl.getPeriodoAnio(), pl.getPeriodoMes(),
+                YearMonth.of(pl.getPeriodoAnio(), pl.getPeriodoMes()).lengthOfMonth());
     }
 
     private BigDecimal nz(BigDecimal v) {
@@ -624,9 +644,9 @@ public class PlanillaService {
         Map<Long, Map<Long, BigDecimal>> montosPorDetalle = new HashMap<>();
         if (!detalleIds.isEmpty()) {
             for (PlanillaDetalleConcepto pdc : conceptoRepository.findByPlanillaDetalleIdInOrderByIdAsc(detalleIds)) {
-                if (pdc.getPlanillaDetalle() == null || pdc.getConcepto() == null) continue;
+                if (pdc.getConcepto() == null) continue;
                 montosPorDetalle
-                        .computeIfAbsent(pdc.getPlanillaDetalle().getId(), k -> new HashMap<>())
+                        .computeIfAbsent(pdc.getPlanillaDetalleId(), k -> new HashMap<>())
                         .put(pdc.getConcepto().getId(), pdc.getMonto());
             }
         }
@@ -685,7 +705,14 @@ public class PlanillaService {
                 Concepto concepto = porId.get(mc.getKey());
                 if (concepto == null) continue;
                 conceptoRepository.save(PlanillaDetalleConcepto.builder()
-                        .planillaDetalle(detalle)
+                        .planillaDetalleId(detalleId)
+                        .planillaId(detalle.getPlanilla().getId())
+                        .empleadoId(detalle.getEmpleado().getId())
+                        .item(detalle.getItem())
+                        .horasTrabajadas(detalle.getHorasTrabajadas())
+                        .jornalHora(detalle.getJornalHora())
+                        .diasAntiguedad(detalle.getDiasAntiguedad())
+                        .bonoAntigPct(detalle.getBonoAntigPct())
                         .concepto(concepto)
                         .tipo(concepto.getTipo())
                         .monto(mc.getValue())
@@ -695,32 +722,54 @@ public class PlanillaService {
             recalcularDetalle(detalle);
         }
 
-        recalcularTotalesPlanilla(planilla);
     }
 
-    private void guardarConceptos(PlanillaDetalle detalle, BigDecimal totalGanado,
+    private void guardarConceptos(Long detalleId, Long planillaId, Long empleadoId, Integer item,
+                                  BigDecimal horasTrabajadas, BigDecimal jornalHora,
+                                  Integer diasAntiguedad, BigDecimal bonoAntigPct, BigDecimal totalGanado,
                                   BigDecimal aporteAfp, BigDecimal aporteRiesgo,
                                   BigDecimal aporteSolidario, BigDecimal aporteNacional,
                                   BigDecimal haberBasico, BigDecimal bonoAntigMonto,
                                   BigDecimal salarioDominical) {
-        guardarConceptoPorCodigo(detalle, "HABER_BASICO", haberBasico);
-        guardarConceptoPorCodigo(detalle, "BONO_ANTIGUEDAD", bonoAntigMonto);
-        guardarConceptoPorCodigo(detalle, "SALARIO_DOMINICAL", salarioDominical);
-        guardarConceptoPorCodigo(detalle, "AFP_10", aporteAfp);
-        guardarConceptoPorCodigo(detalle, "AFP_2_21", aporteRiesgo);
-        guardarConceptoPorCodigo(detalle, "APORTE_SOLIDARIO", aporteSolidario);
-        guardarConceptoPorCodigo(detalle, "APORTE_NACIONAL", aporteNacional);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "HABER_BASICO", haberBasico);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "BONO_ANTIGUEDAD", bonoAntigMonto);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "SALARIO_DOMINICAL", salarioDominical);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "AFP_10", aporteAfp);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "AFP_2_21", aporteRiesgo);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "APORTE_SOLIDARIO", aporteSolidario);
+        guardarConceptoPorCodigo(detalleId, planillaId, empleadoId, item, horasTrabajadas, jornalHora,
+                diasAntiguedad, bonoAntigPct, "APORTE_NACIONAL", aporteNacional);
     }
 
-    private void guardarConceptoPorCodigo(PlanillaDetalle detalle, String codigo, BigDecimal monto) {
+    private void guardarConceptoPorCodigo(Long detalleId, Long planillaId, Long empleadoId, Integer item,
+                                          BigDecimal horasTrabajadas, BigDecimal jornalHora,
+                                          Integer diasAntiguedad, BigDecimal bonoAntigPct,
+                                          String codigo, BigDecimal monto) {
         conceptRepository.findByCodigo(codigo)
-                .ifPresent(concepto -> guardarConcepto(detalle, concepto, monto));
+                .ifPresent(concepto -> guardarConcepto(detalleId, planillaId, empleadoId, item,
+                        horasTrabajadas, jornalHora, diasAntiguedad, bonoAntigPct, concepto, monto));
     }
 
-    private void guardarConcepto(PlanillaDetalle detalle, Concepto concepto, BigDecimal monto) {
+    private void guardarConcepto(Long detalleId, Long planillaId, Long empleadoId, Integer item,
+                                 BigDecimal horasTrabajadas, BigDecimal jornalHora,
+                                 Integer diasAntiguedad, BigDecimal bonoAntigPct,
+                                 Concepto concepto, BigDecimal monto) {
         if (monto != null && monto.compareTo(BigDecimal.ZERO) != 0) {
             conceptoRepository.save(PlanillaDetalleConcepto.builder()
-                    .planillaDetalle(detalle)
+                    .planillaDetalleId(detalleId)
+                    .planillaId(planillaId)
+                    .empleadoId(empleadoId)
+                    .item(item)
+                    .horasTrabajadas(horasTrabajadas)
+                    .jornalHora(jornalHora)
+                    .diasAntiguedad(diasAntiguedad)
+                    .bonoAntigPct(bonoAntigPct)
                     .concepto(concepto)
                     .tipo(concepto.getTipo())
                     .monto(monto)

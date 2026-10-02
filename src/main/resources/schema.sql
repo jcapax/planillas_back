@@ -147,39 +147,9 @@ CREATE TABLE IF NOT EXISTS planilla (
     empresa_id       BIGINT REFERENCES empresa(id),
     estado           VARCHAR(30) NOT NULL DEFAULT 'BORRADOR',
     fecha_liquidacion DATE,
-    total_haberes    NUMERIC(14,2) NOT NULL DEFAULT 0,
-    total_descuentos NUMERIC(14,2) NOT NULL DEFAULT 0,
-    total_liquido    NUMERIC(14,2) NOT NULL DEFAULT 0,
     created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_planilla_periodo UNIQUE (periodo_anio, periodo_mes)
-);
-
--- ----------------------------------------------------------------------------
--- PLANILLA_DETALLE: línea de planilla por empleado (hoja auxiliar)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS planilla_detalle (
-    id                  BIGSERIAL PRIMARY KEY,
-    planilla_id         BIGINT NOT NULL REFERENCES planilla(id),
-    empleado_id         BIGINT NOT NULL REFERENCES empleado(id),
-    item                INTEGER,
-    horas_trabajadas    NUMERIC(8,2)  NOT NULL DEFAULT 0,
-    jornal_hora         NUMERIC(12,4) NOT NULL DEFAULT 0,
-    haber_basico        NUMERIC(14,2) NOT NULL DEFAULT 0,
-    dias_antiguedad     INTEGER       NOT NULL DEFAULT 0,
-    bono_antig_pct      NUMERIC(8,4)  NOT NULL DEFAULT 0,
-    salario_dominical   NUMERIC(14,2) NOT NULL DEFAULT 0,
-    bono_antig_monto    NUMERIC(14,2) NOT NULL DEFAULT 0,
-    total_ganado        NUMERIC(14,2) NOT NULL DEFAULT 0,
-    aporte_solidario    NUMERIC(14,2) NOT NULL DEFAULT 0,
-    aporte_nacional     NUMERIC(14,2) NOT NULL DEFAULT 0,
-    aporte_afp          NUMERIC(14,2) NOT NULL DEFAULT 0,
-    aporte_riesgo_comun NUMERIC(14,2) NOT NULL DEFAULT 0,
-    total_aportes       NUMERIC(14,2) NOT NULL DEFAULT 0,
-    descuentos_varios   NUMERIC(14,2) NOT NULL DEFAULT 0,
-    total_descuentos    NUMERIC(14,2) NOT NULL DEFAULT 0,
-    liquido_pagable     NUMERIC(14,2) NOT NULL DEFAULT 0,
-    CONSTRAINT uq_detalle_empleado UNIQUE (planilla_id, empleado_id)
 );
 
 -- ----------------------------------------------------------------------------
@@ -187,7 +157,14 @@ CREATE TABLE IF NOT EXISTS planilla_detalle (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS planilla_detalle_concepto (
     id                  BIGSERIAL PRIMARY KEY,
-    planilla_detalle_id BIGINT NOT NULL REFERENCES planilla_detalle(id),
+    planilla_detalle_id BIGINT NOT NULL,
+    planilla_id         BIGINT,
+    empleado_id         BIGINT,
+    item                INTEGER,
+    horas_trabajadas    NUMERIC(8,2),
+    jornal_hora         NUMERIC(12,4),
+    dias_antiguedad     INTEGER,
+    bono_antig_pct      NUMERIC(8,4),
     concepto_id         BIGINT NOT NULL REFERENCES concepto(id),
     tipo                VARCHAR(20),
     monto               NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -199,8 +176,7 @@ CREATE TABLE IF NOT EXISTS planilla_detalle_concepto (
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_empleado_activo        ON empleado (activo);
 CREATE INDEX IF NOT EXISTS idx_persona_apellidos      ON persona (apellido_paterno, apellido_materno);
-CREATE INDEX IF NOT EXISTS idx_detalle_planilla       ON planilla_detalle (planilla_id);
-CREATE INDEX IF NOT EXISTS idx_detalle_empleado       ON planilla_detalle (empleado_id);
+CREATE INDEX IF NOT EXISTS idx_detalle_concepto_det   ON planilla_detalle_concepto (planilla_detalle_id);
 CREATE INDEX IF NOT EXISTS idx_concepto_tipo          ON concepto (tipo, activo);
 
 -- ============================================================================
@@ -412,16 +388,6 @@ ALTER TABLE empleado ADD COLUMN IF NOT EXISTS horas_trabajadas NUMERIC(8,2) NOT 
 -- ----------------------------------------------------------------------------
 ALTER TABLE empleado ADD COLUMN IF NOT EXISTS haber_basico NUMERIC(14,2);
 
--- Backfill: copia el haber_basico de la planilla más reciente generada
-UPDATE empleado e SET haber_basico = sub.haber_basico
-FROM (
-    SELECT DISTINCT ON (pd.empleado_id) pd.empleado_id, pd.haber_basico
-    FROM planilla_detalle pd
-    WHERE pd.haber_basico IS NOT NULL
-    ORDER BY pd.empleado_id, pd.planilla_id DESC
-) sub
-WHERE sub.empleado_id = e.id AND e.haber_basico IS NULL;
-
 CREATE TABLE IF NOT EXISTS configuracion (
     id                         BIGSERIAL PRIMARY KEY,
     minimo_nacional            NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -433,3 +399,100 @@ CREATE TABLE IF NOT EXISTS configuracion (
 INSERT INTO configuracion (minimo_nacional, cantidad_minimo_nacional)
 SELECT 0.00, 1.00
 WHERE NOT EXISTS (SELECT 1 FROM configuracion);
+
+-- ----------------------------------------------------------------------------
+-- Modificación 6: planilla_detalle pasa a ser una VISTA calculada a partir de
+-- planilla_detalle_concepto. Cada movimiento (concepto) repite las columnas
+-- base del detalle (planilla_id, empleado_id, item, horas, jornal, días y
+-- porcentaje de antigüedad); la vista agrupa por planilla_detalle_id y
+-- resume los montos por tipo de concepto.
+-- ----------------------------------------------------------------------------
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS planilla_id BIGINT;
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS empleado_id BIGINT;
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS item INTEGER;
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS horas_trabajadas NUMERIC(8,2);
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS jornal_hora NUMERIC(12,4);
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS dias_antiguedad INTEGER;
+ALTER TABLE planilla_detalle_concepto ADD COLUMN IF NOT EXISTS bono_antig_pct NUMERIC(8,4);
+
+CREATE INDEX IF NOT EXISTS idx_detalle_concepto_plan ON planilla_detalle_concepto (planilla_id);
+
+CREATE SEQUENCE IF NOT EXISTS planilla_detalle_id_seq;
+
+SELECT setval('planilla_detalle_id_seq',
+              COALESCE((SELECT MAX(planilla_detalle_id) FROM planilla_detalle_concepto), 0) + 1,
+              false);
+
+DROP VIEW IF EXISTS planilla_detalle;
+
+CREATE OR REPLACE VIEW v_planilla_detalle AS
+SELECT
+    pdc.planilla_detalle_id                       AS id,
+    MAX(pdc.planilla_id)                          AS planilla_id,
+    MAX(pdc.empleado_id)                          AS empleado_id,
+    MAX(pdc.item)                                 AS item,
+    MAX(pdc.horas_trabajadas)                     AS horas_trabajadas,
+    MAX(pdc.jornal_hora)                          AS jornal_hora,
+    MAX(pdc.dias_antiguedad)                      AS dias_antiguedad,
+    MAX(pdc.bono_antig_pct)                       AS bono_antig_pct,
+    COALESCE(SUM(CASE WHEN c.codigo = 'HABER_BASICO'     THEN pdc.monto END), 0) AS haber_basico,
+    COALESCE(SUM(CASE WHEN c.codigo = 'SALARIO_DOMINICAL' THEN pdc.monto END), 0) AS salario_dominical,
+    COALESCE(SUM(CASE WHEN c.codigo = 'BONO_ANTIGUEDAD'  THEN pdc.monto END), 0) AS bono_antig_monto,
+    COALESCE(SUM(CASE WHEN c.codigo = 'APORTE_SOLIDARIO' THEN pdc.monto END), 0) AS aporte_solidario,
+    COALESCE(SUM(CASE WHEN c.codigo = 'APORTE_NACIONAL'  THEN pdc.monto END), 0) AS aporte_nacional,
+    COALESCE(SUM(CASE WHEN c.codigo = 'AFP_10'           THEN pdc.monto END), 0) AS aporte_afp,
+    COALESCE(SUM(CASE WHEN c.codigo = 'AFP_2_21'         THEN pdc.monto END), 0) AS aporte_riesgo_comun,
+    COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'HABER'     THEN pdc.monto END), 0) AS total_ganado,
+    COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'APORTE'    THEN pdc.monto END), 0) AS total_aportes,
+    COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'DESCUENTO' THEN pdc.monto END), 0) AS descuentos_varios,
+    COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'APORTE'    THEN pdc.monto END), 0)
+        + COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'DESCUENTO' THEN pdc.monto END), 0) AS total_descuentos,
+    COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'HABER' THEN pdc.monto END), 0)
+        - COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'APORTE' THEN pdc.monto END), 0)
+        - COALESCE(SUM(CASE WHEN COALESCE(pdc.tipo, c.tipo) = 'DESCUENTO' THEN pdc.monto END), 0) AS liquido_pagable
+FROM planilla_detalle_concepto pdc
+JOIN concepto c ON c.id = pdc.concepto_id
+GROUP BY pdc.planilla_detalle_id;
+
+-- Backfill: copia el haber_basico de la planilla más reciente generada
+UPDATE empleado e SET haber_basico = sub.haber_basico
+FROM (
+    SELECT DISTINCT ON (pd.empleado_id) pd.empleado_id, pd.haber_basico
+    FROM v_planilla_detalle pd
+    WHERE pd.haber_basico IS NOT NULL
+    ORDER BY pd.empleado_id, pd.planilla_id DESC
+) sub
+WHERE sub.empleado_id = e.id AND e.haber_basico IS NULL;
+
+-- ----------------------------------------------------------------------------
+-- Modificación 7: v_planilla, vista con los totales calculados
+--   Los campos total_haberes, total_descuentos y total_liquido se eliminan de
+--   la tabla planilla y se calculan en la vista v_planilla a partir de
+--   v_planilla_detalle.
+-- ----------------------------------------------------------------------------
+ALTER TABLE planilla DROP COLUMN IF EXISTS total_haberes;
+ALTER TABLE planilla DROP COLUMN IF EXISTS total_descuentos;
+ALTER TABLE planilla DROP COLUMN IF EXISTS total_liquido;
+
+CREATE OR REPLACE VIEW v_planilla AS
+SELECT
+    p.id,
+    p.periodo_anio,
+    p.periodo_mes,
+    p.nombre,
+    p.empresa_id,
+    p.estado,
+    p.fecha_liquidacion,
+    COALESCE((SELECT SUM(d.total_ganado)     FROM v_planilla_detalle d WHERE d.planilla_id = p.id), 0) AS total_haberes,
+    COALESCE((SELECT SUM(d.total_descuentos) FROM v_planilla_detalle d WHERE d.planilla_id = p.id), 0) AS total_descuentos,
+    COALESCE((SELECT SUM(d.total_ganado)     FROM v_planilla_detalle d WHERE d.planilla_id = p.id), 0)
+        - COALESCE((SELECT SUM(d.total_descuentos) FROM v_planilla_detalle d WHERE d.planilla_id = p.id), 0) AS total_liquido,
+    p.created_at,
+    p.updated_at
+FROM planilla p;
+
+-- ----------------------------------------------------------------------------
+-- Modificación 8: edad de riesgo común en configuración
+-- ----------------------------------------------------------------------------
+ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS edad_riesgo_comun INTEGER;
+ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS edad_riesgo_comun_pct NUMERIC(8,4);

@@ -9,7 +9,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "planilla")
+@Table(name = "v_planilla")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -21,7 +21,6 @@ public class Planilla {
     public static final String ESTADO_CERRADA = "CERRADA";
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "periodo_anio", nullable = false)
