@@ -1,5 +1,6 @@
 package com.sucre.surena.controller;
 
+import com.sucre.surena.dto.DescuentoCeldaDTO;
 import com.sucre.surena.dto.EmpleadoDescuentoDTO;
 import com.sucre.surena.dto.PapeletaDTO;
 import com.sucre.surena.entity.Concepto;
@@ -12,10 +13,13 @@ import com.sucre.surena.repository.ConceptoRepository;
 import com.sucre.surena.repository.PlanillaDetalleConceptoRepository;
 import com.sucre.surena.repository.PlanillaDetalleRepository;
 import com.sucre.surena.repository.PlanillaRepository;
+import com.sucre.surena.service.PlanillaPdfService;
 import com.sucre.surena.service.PlanillaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -36,6 +40,7 @@ public class PlanillaController {
     private final PlanillaDetalleConceptoRepository detalleConceptoRepository;
     private final ConceptoRepository conceptoRepository;
     private final PlanillaService planillaService;
+    private final PlanillaPdfService planillaPdfService;
 
     @GetMapping
     public List<Planilla> listar() {
@@ -67,9 +72,41 @@ public class PlanillaController {
         }
     }
 
+    @PostMapping("/{id}/recalcular")
+    public ResponseEntity<?> recalcular(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(planillaService.recalcular(id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
+        }
+    }
+
     @GetMapping("/{id}/detalles")
     public List<PlanillaDetalle> detalles(@PathVariable Long id) {
         return detalleRepository.findByPlanillaIdOrderByItemAsc(id);
+    }
+
+    @GetMapping("/{id}/pdf")
+    public ResponseEntity<?> pdf(@PathVariable Long id) {
+        Planilla planilla = planillaRepository.findById(id).orElse(null);
+        if (planilla == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            byte[] contenido = planillaPdfService.generar(id);
+            String nombre = String.format("planilla_%02d_%d.pdf",
+                    planilla.getPeriodoMes() == null ? 0 : planilla.getPeriodoMes(),
+                    planilla.getPeriodoAnio() == null ? 0 : planilla.getPeriodoAnio());
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + nombre + "\"")
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .contentLength(contenido.length)
+                    .body(contenido);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.internalServerError().body(error(e.getMessage()));
+        }
     }
 
     @Transactional(readOnly = true)
@@ -121,21 +158,13 @@ public class PlanillaController {
     }
 
     @GetMapping("/detalles/{detalleId}/descuentos")
-    public ResponseEntity<?> descuentos(@PathVariable Long detalleId) {
-        if (!detalleRepository.existsById(detalleId)) {
-            return ResponseEntity.notFound().build();
+    public ResponseEntity<?> descuentos(@PathVariable Long detalleId,
+                                        @RequestParam(required = false) String tipos) {
+        try {
+            return ResponseEntity.ok(planillaService.conceptosDeDetalle(detalleId, tipos));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
         }
-        List<Concepto> variables = conceptoRepository
-                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "VARIABLE");
-        Map<Long, BigDecimal> montos = detalleConceptoRepository
-                .findByPlanillaDetalleIdOrderByIdAsc(detalleId).stream()
-                .filter(pdc -> pdc.getTipo() != null && Concepto.TIPO_DESCUENTO.equals(pdc.getTipo()))
-                .collect(Collectors.toMap(pdc -> pdc.getConcepto().getId(), PlanillaDetalleConcepto::getMonto));
-        List<EmpleadoDescuentoDTO> result = variables.stream()
-                .map(c -> new EmpleadoDescuentoDTO(c.getId(), c.getCodigo(), c.getNombre(),
-                        montos.getOrDefault(c.getId(), BigDecimal.ZERO)))
-                .toList();
-        return ResponseEntity.ok(result);
     }
 
     @PutMapping("/detalles/{detalleId}/descuentos")
@@ -143,6 +172,27 @@ public class PlanillaController {
                                                @Valid @RequestBody List<EmpleadoDescuentoDTO> descuentos) {
         try {
             return ResponseEntity.ok(planillaService.actualizarDescuentos(detalleId, descuentos));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{id}/descuentos-matriz")
+    public ResponseEntity<?> matrizDescuentos(@PathVariable Long id,
+                                              @RequestParam(required = false) String tipos) {
+        try {
+            return ResponseEntity.ok(planillaService.obtenerMatrizPlanilla(id, tipos));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}/descuentos-matriz")
+    public ResponseEntity<?> guardarMatrizDescuentos(@PathVariable Long id,
+                                                    @RequestBody List<DescuentoCeldaDTO> celdas) {
+        try {
+            planillaService.guardarMatrizPlanilla(id, celdas == null ? List.of() : celdas);
+            return ResponseEntity.ok(Map.of("mensaje", "Descuentos masivos guardados y totales recalculados"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(error(e.getMessage()));
         }

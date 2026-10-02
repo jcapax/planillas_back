@@ -400,3 +400,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_bono_antiguedad ON bono_antiguedad (desde_d
 --   y solo recurre a (DIAS_MES - DOMINICALES) * HORAS_DIA cuando es NULO/<=0.
 -- ----------------------------------------------------------------------------
 ALTER TABLE empleado ADD COLUMN IF NOT EXISTS horas_trabajadas NUMERIC(8,2) NOT NULL DEFAULT 208.00;
+
+-- ----------------------------------------------------------------------------
+-- Modificación 5: haber_basico por empleado y tabla de configuración
+--   - empleado.haber_basico: importe del haber básico tomado de la última
+--     planilla generada. Al generar, PlanillaService usa este valor (si está
+--     informado) en lugar de jornal x horas, y vuelve a guardarlo.
+--   - configuracion: fila única con minimo_nacional y cantidad_minimo_nacional
+--     usados para el bono de antigüedad:
+--     bono_antig_monto = minimo_nacional x cantidad_minimo_nacional x bono_antig_pct
+-- ----------------------------------------------------------------------------
+ALTER TABLE empleado ADD COLUMN IF NOT EXISTS haber_basico NUMERIC(14,2);
+
+-- Backfill: copia el haber_basico de la planilla más reciente generada
+UPDATE empleado e SET haber_basico = sub.haber_basico
+FROM (
+    SELECT DISTINCT ON (pd.empleado_id) pd.empleado_id, pd.haber_basico
+    FROM planilla_detalle pd
+    WHERE pd.haber_basico IS NOT NULL
+    ORDER BY pd.empleado_id, pd.planilla_id DESC
+) sub
+WHERE sub.empleado_id = e.id AND e.haber_basico IS NULL;
+
+CREATE TABLE IF NOT EXISTS configuracion (
+    id                         BIGSERIAL PRIMARY KEY,
+    minimo_nacional            NUMERIC(14,2) NOT NULL DEFAULT 0,
+    cantidad_minimo_nacional   NUMERIC(14,2) NOT NULL DEFAULT 1,
+    created_at                 TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                 TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO configuracion (minimo_nacional, cantidad_minimo_nacional)
+SELECT 0.00, 1.00
+WHERE NOT EXISTS (SELECT 1 FROM configuracion);

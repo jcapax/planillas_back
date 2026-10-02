@@ -60,6 +60,9 @@ public class Empleado {
     @Column(name = "horas_trabajadas", nullable = false, precision = 8, scale = 2)
     private BigDecimal horasTrabajadas = new BigDecimal("208.00");
 
+    @Column(name = "haber_basico", precision = 14, scale = 2)
+    private BigDecimal haberBasico;
+
     @Column(nullable = false)
     private Boolean activo = true;
 

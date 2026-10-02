@@ -1,5 +1,7 @@
 package com.sucre.surena.controller;
 
+import com.sucre.surena.dto.DescuentoCeldaDTO;
+import com.sucre.surena.dto.EmpleadoConceptoDTO;
 import com.sucre.surena.dto.EmpleadoDescuentoDTO;
 import com.sucre.surena.entity.Concepto;
 import com.sucre.surena.entity.Empleado;
@@ -9,6 +11,7 @@ import com.sucre.surena.repository.ConceptoRepository;
 import com.sucre.surena.repository.EmpleadoDescuentoRepository;
 import com.sucre.surena.repository.EmpleadoRepository;
 import com.sucre.surena.repository.PersonaRepository;
+import com.sucre.surena.service.PlanillaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +35,7 @@ public class EmpleadoController {
     private final PersonaRepository personaRepository;
     private final EmpleadoDescuentoRepository empleadoDescuentoRepository;
     private final ConceptoRepository conceptoRepository;
+    private final PlanillaService planillaService;
 
     @GetMapping
     public Page<Empleado> listar(@RequestParam(required = false) String q,
@@ -95,19 +99,12 @@ public class EmpleadoController {
     }
 
     @GetMapping("/{id}/descuentos")
-    public ResponseEntity<?> descuentos(@PathVariable Long id) {
+    public ResponseEntity<?> descuentos(@PathVariable Long id,
+                                        @RequestParam(required = false) String tipos) {
         if (!empleadoRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        List<Concepto> variables = conceptoRepository
-                .findByActivoTrueAndTipoAndTipoDescuentoOrderByOrdenAsc(Concepto.TIPO_DESCUENTO, "VARIABLE");
-        Map<Long, BigDecimal> montos = empleadoDescuentoRepository.findByEmpleadoIdOrderByConceptoOrdenAsc(id)
-                .stream()
-                .collect(Collectors.toMap(d -> d.getConcepto().getId(), EmpleadoDescuento::getMonto));
-        List<EmpleadoDescuentoDTO> result = variables.stream()
-                .map(c -> new EmpleadoDescuentoDTO(c.getId(), c.getCodigo(), c.getNombre(),
-                        montos.getOrDefault(c.getId(), BigDecimal.ZERO)))
-                .toList();
+        List<EmpleadoConceptoDTO> result = planillaService.conceptosDeEmpleado(id, tipos);
         return ResponseEntity.ok(result);
     }
 
@@ -118,27 +115,27 @@ public class EmpleadoController {
         if (empleado == null) {
             return ResponseEntity.notFound().build();
         }
-        List<EmpleadoDescuento> aGuardar = new ArrayList<>();
-        for (EmpleadoDescuentoDTO dto : descuentos) {
-            if (dto.conceptoId() == null || dto.monto() == null || dto.monto().compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-            Concepto concepto = conceptoRepository.findById(dto.conceptoId()).orElse(null);
-            if (concepto == null || !Concepto.TIPO_DESCUENTO.equals(concepto.getTipo())
-                    || !"VARIABLE".equals(concepto.getTipoDescuento())) {
-                return ResponseEntity.badRequest().body(error(
-                        "El concepto " + (concepto != null ? concepto.getCodigo() : dto.conceptoId())
-                                + " no es un descuento variable"));
-            }
-            aGuardar.add(EmpleadoDescuento.builder()
-                    .empleado(empleado)
-                    .concepto(concepto)
-                    .monto(dto.monto())
-                    .build());
+        try {
+            planillaService.guardarConceptosDeEmpleado(id, descuentos);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
         }
-        empleadoDescuentoRepository.deleteByEmpleadoId(id);
-        empleadoDescuentoRepository.saveAll(aGuardar);
-        return ResponseEntity.ok(Map.of("mensaje", "Descuentos guardados"));
+        return ResponseEntity.ok(Map.of("mensaje", "Conceptos guardados"));
+    }
+
+    @GetMapping("/descuentos-matriz")
+    public ResponseEntity<?> matrizDescuentos(@RequestParam(required = false) String tipos) {
+        return ResponseEntity.ok(planillaService.obtenerMatrizEmpleados(tipos));
+    }
+
+    @PutMapping("/descuentos-matriz")
+    public ResponseEntity<?> guardarMatrizDescuentos(@RequestBody List<DescuentoCeldaDTO> celdas) {
+        try {
+            planillaService.guardarMatrizEmpleados(celdas == null ? List.of() : celdas);
+            return ResponseEntity.ok(Map.of("mensaje", "Descuentos masivos guardados"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(error(e.getMessage()));
+        }
     }
 
     private Map<String, String> error(String mensaje) {
