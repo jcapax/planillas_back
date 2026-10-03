@@ -54,6 +54,9 @@ public class Empleado {
     @Column(nullable = false)
     private Boolean jubilado = false;
 
+    @Column(nullable = false)
+    private Boolean sindicato = false;
+
     @Column(name = "jornal_hora", nullable = false, precision = 12, scale = 4)
     private BigDecimal jornalHora = BigDecimal.ZERO;
 

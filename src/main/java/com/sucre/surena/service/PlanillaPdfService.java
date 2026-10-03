@@ -40,24 +40,24 @@ public class PlanillaPdfService {
             "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"};
 
     private static final String[] COLUMNAS = {
-            "Nº", "Tipo Doc.", "Nº Documento", "Ext.", "AFP", "NUA/CUA",
+            "Nº", "Tipo Doc.", "Nº Documento", "Ext.", "NUA/CUA",
             "Apellido Paterno", "Apellido Materno", "Nombre 1 / Otros", "País",
             "F. Nacimiento", "Sexo", "Jubilado", "Cargo", "F. Ingreso", "Horas",
-            "Haber Básico", "Bono Antig.", "Otros Bonos", "Total Ganado",
+            "Haber Básico", "% Bono Ant.", "Bono Antig.", "Otros Bonos", "Total Ganado",
             "Aportes AFP", "Otros Desc.", "Total Desc.", "Líquido", "Firma"
     };
 
     private static final float[] ANCHOS = {
-            1.6f, 3f, 4.5f, 2f, 3.5f, 4.5f, 6f, 6f, 7.5f, 4f,
-            4f, 1.5f, 2.5f, 8f, 4f, 3f, 4.5f, 4.5f, 4.5f, 4.5f,
+            1.6f, 3f, 4.5f, 2f, 4.5f, 6f, 6f, 7.5f, 4f,
+            4f, 1.5f, 2.5f, 8f, 4f, 3f, 4.5f, 2.5f, 4.5f, 4.5f, 4.5f,
             4.5f, 4.5f, 4.5f, 4.5f, 8f
     };
 
     private static final int[] ALINEACION = {
             Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
-            Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_LEFT, Element.ALIGN_LEFT,
-            Element.ALIGN_LEFT, Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
-            Element.ALIGN_RIGHT, Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
+            Element.ALIGN_RIGHT, Element.ALIGN_LEFT, Element.ALIGN_LEFT, Element.ALIGN_LEFT,
+            Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
+            Element.ALIGN_LEFT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
             Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
             Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT, Element.ALIGN_RIGHT,
             Element.ALIGN_LEFT
@@ -163,14 +163,14 @@ public class PlanillaPdfService {
         }
 
         PdfPCell etiqueta = new PdfPCell(new Phrase("TOTALES", negrita));
-        etiqueta.setColspan(15);
+        etiqueta.setColspan(14);
         etiqueta.setHorizontalAlignment(Element.ALIGN_LEFT);
         etiqueta.setVerticalAlignment(Element.ALIGN_MIDDLE);
         etiqueta.setBorderWidth(0.4f);
         etiqueta.setPadding(1.5f);
         tabla.addCell(etiqueta);
 
-        Object[] totales = {num(tHoras), num(tHaber), num(tBono), num(tOtros), num(tGanado),
+        Object[] totales = {num(tHoras), num(tHaber), "", num(tBono), num(tOtros), num(tGanado),
                 num(tAportes), num(tOtrosDesc), num(tTotalDesc), num(tLiquido)};
         for (Object total : totales) {
             tabla.addCell(celda(String.valueOf(total), negrita, Element.ALIGN_RIGHT, Color.WHITE));
@@ -188,7 +188,6 @@ public class PlanillaPdfService {
                 valor(persona != null ? persona.getTipoDocumento() : null),
                 valor(persona != null ? persona.getNroDocumento() : null),
                 valor(empleado != null ? empleado.getOrigen() : null),
-                valor(empleado != null ? empleado.getAfp() : null),
                 valor(empleado != null ? empleado.getNuaCua() : null),
                 valor(persona != null ? persona.getApellidoPaterno() : null),
                 valor(persona != null ? persona.getApellidoMaterno() : null),
@@ -203,6 +202,7 @@ public class PlanillaPdfService {
                         ? empleado.getFechaIngreso().format(FECHA) : "",
                 num(d.getHorasTrabajadas()),
                 num(d.getHaberBasico()),
+                pct(d.getBonoAntigPct()),
                 num(d.getBonoAntigMonto()),
                 num(d.getSalarioDominical()),
                 num(d.getTotalGanado()),
@@ -248,5 +248,9 @@ public class PlanillaPdfService {
 
     private String num(BigDecimal v) {
         return String.format(Locale.US, "%.2f", nulo(v));
+    }
+
+    private String pct(BigDecimal v) {
+        return v == null ? "" : String.format(Locale.US, "%.2f%%", v.multiply(new BigDecimal("100")));
     }
 }

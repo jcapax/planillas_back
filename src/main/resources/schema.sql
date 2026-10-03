@@ -496,3 +496,32 @@ FROM planilla p;
 -- ----------------------------------------------------------------------------
 ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS edad_riesgo_comun INTEGER;
 ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS edad_riesgo_comun_pct NUMERIC(8,4);
+
+-- ----------------------------------------------------------------------------
+-- Modificación 9: v_persona_empleado
+-- Vista con los datos básicos de la persona junto con los datos laborales del
+-- empleado y su porcentaje de antigüedad vigente.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW v_persona_empleado AS
+SELECT
+    pe.id AS persona_id,
+    TRIM(CONCAT_WS(' ', pe.apellido_paterno, pe.apellido_materno, pe.nombres)) AS persona_nombre_completo,
+    e.id AS empleado_id,
+    e.cargo,
+    e.jornal_hora,
+    e.fecha_ingreso,
+    e.fecha_seguro,
+    (SELECT b.porcentaje
+       FROM bono_antiguedad b
+      WHERE b.activo
+        AND e.fecha_ingreso IS NOT NULL
+        AND b.desde_dias <= (CURRENT_DATE - e.fecha_ingreso)
+      ORDER BY b.desde_dias DESC
+      LIMIT 1) AS porcentaje_antiguedad
+FROM empleado e
+JOIN persona pe ON pe.id = e.persona_id;
+
+-- ----------------------------------------------------------------------------
+-- Modificación 10: empleado.sindicato
+-- ----------------------------------------------------------------------------
+ALTER TABLE empleado ADD COLUMN IF NOT EXISTS sindicato BOOLEAN NOT NULL DEFAULT FALSE;
